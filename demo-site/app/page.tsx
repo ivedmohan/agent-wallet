@@ -511,12 +511,30 @@ console.log(\`\${weather.data.temp}°C, \${weather.data.condition}\`);
       </section>
 
       {/* ── Footer ── */}
-      <footer className="border-t border-white/5 py-8 text-center text-xs text-white/20">
-        Built on{' '}
-        <a href="https://smoothsend.xyz" target="_blank" rel="noopener noreferrer" className="text-white/40 hover:text-white/60 transition-colors">SmoothSend</a>
-        {' '}ERC-4337 infrastructure ·{' '}
-        <a href="https://github.com/vedmohan/agent-wallet" target="_blank" rel="noopener noreferrer" className="text-white/40 hover:text-white/60 transition-colors">GitHub</a>
-        {' '}· Avalanche Fuji
+      <footer className="border-t border-white/5 py-8">
+        <div className="max-w-6xl mx-auto px-6 flex items-center justify-between">
+          <div className="text-xs text-white/20">
+            <a href="https://github.com/vedmohan/agent-wallet" target="_blank" rel="noopener noreferrer" className="text-white/40 hover:text-white/60 transition-colors">GitHub</a>
+            &nbsp;·&nbsp; Avalanche Fuji
+          </div>
+          <a href="https://smoothsend.xyz" target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-2 text-xs text-white/30 hover:text-white/60 transition-all group">
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="ss-logo" x1="0" y1="0" x2="24" y2="24">
+                  <stop offset="0%" stopColor="#a78bfa" />
+                  <stop offset="100%" stopColor="#22d3ee" />
+                </linearGradient>
+              </defs>
+              <rect x="2" y="2" width="20" height="20" rx="6" fill="url(#ss-logo)" opacity="0.15" />
+              <path d="M7 12L10 9L14 15L17 12" stroke="url(#ss-logo)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M12 6V18" stroke="url(#ss-logo)" strokeWidth="1.5" strokeLinecap="round" opacity="0.5" />
+            </svg>
+            <span className="group-hover:bg-gradient-to-r group-hover:from-violet-400 group-hover:to-cyan-400 group-hover:bg-clip-text group-hover:text-transparent transition-all">
+              Powered by SmoothSend
+            </span>
+          </a>
+        </div>
       </footer>
     </div>
   );
