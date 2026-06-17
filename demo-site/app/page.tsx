@@ -517,23 +517,22 @@ console.log(\`\${weather.data.temp}°C, \${weather.data.condition}\`);
             <a href="https://github.com/vedmohan/agent-wallet" target="_blank" rel="noopener noreferrer" className="text-white/40 hover:text-white/60 transition-colors">GitHub</a>
             &nbsp;·&nbsp; Avalanche Fuji
           </div>
-          <a href="https://smoothsend.xyz" target="_blank" rel="noopener noreferrer"
-            className="flex items-center gap-2 text-xs text-white/30 hover:text-white/60 transition-all group">
-            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <defs>
-                <linearGradient id="ss-logo" x1="0" y1="0" x2="24" y2="24">
-                  <stop offset="0%" stopColor="#a78bfa" />
-                  <stop offset="100%" stopColor="#22d3ee" />
-                </linearGradient>
-              </defs>
-              <rect x="2" y="2" width="20" height="20" rx="6" fill="url(#ss-logo)" opacity="0.15" />
-              <path d="M7 12L10 9L14 15L17 12" stroke="url(#ss-logo)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M12 6V18" stroke="url(#ss-logo)" strokeWidth="1.5" strokeLinecap="round" opacity="0.5" />
-            </svg>
-            <span className="group-hover:bg-gradient-to-r group-hover:from-violet-400 group-hover:to-cyan-400 group-hover:bg-clip-text group-hover:text-transparent transition-all">
-              Powered by SmoothSend
-            </span>
-          </a>
+          <div className="flex items-center gap-4">
+            <a href="https://www.npmjs.com/package/@vedmohan/agent-wallet" target="_blank" rel="noopener noreferrer"
+              className="text-[10px] text-white/25 hover:text-white/50 transition-colors font-mono">
+              SDK v1.0.0
+            </a>
+            <a href="https://smoothsend.xyz" target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-2 text-xs text-white/30 hover:text-white/60 transition-all group">
+              <svg width="19" height="22" viewBox="0 0 140 162" fill="none" xmlns="http://www.w3.org/2000/svg" className="opacity-40 group-hover:opacity-70 transition-opacity">
+                <path d="M104.738 67.8756C107.331 68.5157 109.524 70.1513 110.832 72.4175C116.719 82.6134 122.266 92.2219 127.729 101.684C138.717 120.716 120.282 144.066 98.5128 138.692L51.0942 126.984C48.9172 126.447 48.5803 123.574 50.5602 122.43L75.6752 107.93C76.7939 107.284 78.1193 107.097 79.3735 107.406L82.8988 108.277C87.2526 109.351 90.9396 104.681 88.742 100.875L69.7345 67.9528C67.5309 64.1362 70.9845 59.5423 75.2631 60.5986L104.738 67.8756Z" fill="currentColor"/>
+                <path d="M34.5435 93.368C31.9513 92.7282 29.7583 91.0925 28.4499 88.8263C22.5633 78.6304 17.0158 69.0219 11.5527 59.5595C0.565034 40.5279 19 17.1777 40.7694 22.5522L88.1879 34.2594C90.3648 34.7967 90.7017 37.6702 88.7219 38.8133L63.6073 53.3134C62.4885 53.9593 61.1631 54.1472 59.9089 53.8376L56.3833 52.9672C52.0294 51.8924 48.3425 56.5625 50.5401 60.3688L69.5479 93.2909C71.7514 97.1075 68.2979 101.702 64.0193 100.645L34.5435 93.368Z" fill="currentColor"/>
+              </svg>
+              <span className="group-hover:bg-gradient-to-r group-hover:from-violet-400 group-hover:to-cyan-400 group-hover:bg-clip-text group-hover:text-transparent transition-all">
+                Powered by SmoothSend
+              </span>
+            </a>
+          </div>
         </div>
       </footer>
     </div>
