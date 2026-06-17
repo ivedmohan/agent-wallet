@@ -1,0 +1,8 @@
+src/
+examples/
+demo-site/
+x402-demo-api/
+.env
+.env.example
+.npmrc
+tsconfig.json

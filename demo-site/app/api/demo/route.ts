@@ -23,8 +23,7 @@ export async function POST(request: NextRequest) {
     addStep('Loading Agent Wallet', 'Connecting to SmoothSend bundler...', 'running');
 
     // 1. Create the wallet (uses SmoothSend SK from env)
-    const { AgentWallet } = await import('@agent-wallet/AgentWallet.js');
-    const { X402Client } = await import('@agent-wallet/X402Client.js');
+    const { AgentWallet, X402Client } = await import('@vedmohan/agent-wallet');
 
     const wallet = await AgentWallet.create({
       smoothSendApiKey: process.env.SMOOTHSEND_API_KEY!,

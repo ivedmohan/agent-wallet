@@ -12,9 +12,8 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "jsx": "preserve",
-    "incremental": true,
-    "paths": {
-      "@agent-wallet/*": ["../src/*"]
+    "incremental": true,    "paths": {
+      "@vedmohan/agent-wallet": ["../src/index.ts"]
     },
     "plugins": [{ "name": "next" }]
   },
