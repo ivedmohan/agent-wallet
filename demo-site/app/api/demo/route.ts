@@ -27,6 +27,7 @@ export async function POST(request: NextRequest) {
 
     const wallet = await AgentWallet.create({
       smoothSendApiKey: process.env.SMOOTHSEND_API_KEY!,
+      privateKey: process.env.PRIVATE_KEY || undefined,
       dailyLimit: process.env.WALLET_DAILY_LIMIT || '100',
       perTxLimit: process.env.WALLET_PER_TX_LIMIT || '10',
       network: (process.env.WALLET_NETWORK as any) || 'avalanche-fuji',
