@@ -101,3 +101,4 @@ No AVAX required at any point.
 MIT
 # agent-wallet
 # agent-wallet
+# agent-wallet
