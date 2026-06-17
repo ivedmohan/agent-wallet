@@ -1,0 +1,43 @@
+{
+  "name": "agent-wallet",
+  "version": "0.1.0",
+  "description": "x402 payments where AI agents pay their own way — API + gas, all in USDC, no AVAX needed. Built on SmoothSend ERC-4337 infrastructure.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start:demoserver": "cd x402-demo-api && npx tsx src/server.ts",
+    "test:e2e": "npx tsx examples/e2e-x402-test.ts",
+    "test:agent": "npx tsx examples/ai-agent-gemini.ts"
+  },
+  "keywords": [
+    "x402",
+    "avalanche",
+    "ai-agents",
+    "payments",
+    "erc-4337",
+    "smoothsend",
+    "gasless",
+    "smart-wallet"
+  ],
+  "author": "Ved Mohan",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ivedmohan/agent-wallet"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "@smoothsend/sdk": "^2.2.3",
+    "axios": "^1.7.0",
+    "dotenv": "^17.4.2",
+    "ethers": "^6.13.0",
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.5.0"
+  }
+}
