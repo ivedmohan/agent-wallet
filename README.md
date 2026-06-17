@@ -99,3 +99,4 @@ No AVAX required at any point.
 ## License
 
 MIT
+# agent-wallet
