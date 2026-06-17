@@ -97,8 +97,4 @@ No AVAX required at any point.
 - [Avalanche MCP](https://build.avax.network/api/mcp) — On-chain verification
 
 ## License
-
 MIT
-# agent-wallet
-# agent-wallet
-# agent-wallet
