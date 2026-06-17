@@ -20,6 +20,10 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    // Read city from request body
+    const body = await request.json().catch(() => ({}));
+    const city = body.city || 'Tokyo';
+
     addStep('Loading Agent Wallet', 'Connecting to SmoothSend bundler...', 'running');
 
     // 1. Create the wallet (uses SmoothSend SK from env)
@@ -43,15 +47,16 @@ export async function POST(request: NextRequest) {
     const host = request.headers.get('host') || 'localhost:3000';
     const protocol = host.includes('localhost') ? 'http' : 'https';
     const baseUrl = `${protocol}://${host}`;
+    const merchantUrl = `${baseUrl}/api/merchant?type=weather&city=${encodeURIComponent(city)}`;
 
-    addStep('x402 Request', `→ ${baseUrl}/api/merchant?type=weather&city=Tokyo`, 'running');
+    addStep('x402 Request', `→ ${merchantUrl}`, 'running');
 
     // 3. Run the x402 flow
     const x402 = new X402Client({ wallet });
 
     // First make a direct request to show the 402
     const rawResponse = await x402['rawRequest']({
-      url: `${baseUrl}/api/merchant?type=weather&city=Tokyo`,
+      url: merchantUrl,
       method: 'GET',
     });
 
@@ -63,36 +68,24 @@ export async function POST(request: NextRequest) {
     addStep('Processing Payment', `Sending via SmoothSend user-pays-erc20 bundler...`, 'running');
 
     // 4. Pay and retry via X402Client
-    const result = await x402.request(`${baseUrl}/api/merchant?type=weather&city=Tokyo`);
+    const result = await x402.request(merchantUrl);
 
     steps[steps.length - 1].status = 'done';
-    steps[steps.length - 1].detail = `TxHash: ${result.payment?.txHash.slice(0, 18)}...`;
-    steps[steps.length - 1].detail = `$${result.payment?.totalCost} USDC · Tx: ${result.payment?.txHash?.slice(0, 18)}...`;
+    const gasDetail = result.payment?.gasCost && parseFloat(result.payment.gasCost) > 0.0001
+      ? `Gas: ~$${parseFloat(result.payment.gasCost).toFixed(4)}`
+      : `Gas: <$0.0001`;
+    steps[steps.length - 1].detail = `$${result.payment?.apiCost} API + ${gasDetail} · Tx: ${result.payment?.txHash?.slice(0, 18)}...`;
 
     addStep('Data Received', `${result.data.city}: ${result.data.temperature}°C, ${result.data.condition}`, 'done');
 
-    // 5. Do a crypto lookup too to show batch capability
-    addStep('Batch Crypto Prices', 'Requesting AVAX, BTC, ETH...', 'running');
-
-    const batchResult = await x402.request({
-      url: `${baseUrl}/api/merchant?type=crypto&symbol=AVAX`,
-      method: 'GET',
-    });
-
-    steps[steps.length - 1].status = 'done';
-    steps[steps.length - 1].detail = `AVAX: $${batchResult.data.price}`;
-
-    // 6. Budget status
+    // 5. Budget status
     const budget = await wallet.getBudgetStatus();
 
     return NextResponse.json({
       success: true,
       duration: Date.now() - startTime,
       steps,
-      result: {
-        weather: result.data,
-        crypto: batchResult.data,
-      },
+      result: { weather: result.data },
       payment: result.payment,
       wallet: {
         address: wallet.address,

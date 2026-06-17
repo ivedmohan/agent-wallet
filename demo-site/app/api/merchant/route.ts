@@ -7,10 +7,11 @@ const ACCEPTED_TOKEN = 'USDC';
 
 // Demo data
 const WEATHER_DATA: Record<string, { temp: number; condition: string; humidity: number }> = {
-  tokyo:  { temp: 25, condition: 'sunny',      humidity: 45 },
-  london: { temp: 14, condition: 'cloudy',     humidity: 72 },
-  dubai:  { temp: 38, condition: 'clear',      humidity: 20 },
-  nyc:    { temp: 22, condition: 'partly cloudy', humidity: 55 },
+  tokyo:     { temp: 25, condition: 'sunny',      humidity: 45 },
+  london:    { temp: 14, condition: 'cloudy',     humidity: 72 },
+  dubai:     { temp: 38, condition: 'clear',      humidity: 20 },
+  nyc:       { temp: 22, condition: 'partly cloudy', humidity: 55 },
+  'new york': { temp: 22, condition: 'partly cloudy', humidity: 55 },
   singapore: { temp: 30, condition: 'thunderstorms', humidity: 85 },
 };
 

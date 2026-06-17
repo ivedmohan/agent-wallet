@@ -20,6 +20,12 @@ const ERC20_ABI = [
   { name: 'balanceOf', type: 'function', stateMutability: 'view',
     inputs: [{ name: 'account', type: 'address' }],
     outputs: [{ name: '', type: 'uint256' }] },
+  { name: 'approve', type: 'function', stateMutability: 'nonpayable',
+    inputs: [{ name: 'spender', type: 'address' }, { name: 'amount', type: 'uint256' }],
+    outputs: [{ name: '', type: 'bool' }] },
+  { name: 'allowance', type: 'function', stateMutability: 'view',
+    inputs: [{ name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }],
+    outputs: [{ name: '', type: 'uint256' }] },
 ] as const;
 
 const NETWORK_CONFIG = {
@@ -47,6 +53,8 @@ export class AgentWallet {
   private smartAccountAddress: Address;
   private usdcAddress: Address;
   private usdcDecimals: number;
+  private paymasterAddress: Address;
+  private rpcUrl: string;
   private dailySpent: number = 0;
   private txCountToday: number = 0;
   private lastResetDate: Date = new Date();
@@ -55,15 +63,31 @@ export class AgentWallet {
     wallet: Wallet | HDNodeWallet, smoothsend: SmoothSendAvaxClient,
     config: AgentWalletConfig, smartAccountAddress: Address,
     usdcAddress: Address, usdcDecimals: number,
+    paymasterAddress: Address, rpcUrl: string,
   ) {
     this.wallet = wallet; this.smoothsend = smoothsend;
     this.mcp = new McpClient(); this.config = config;
     this.smartAccountAddress = smartAccountAddress;
     this.usdcAddress = usdcAddress; this.usdcDecimals = usdcDecimals;
+    this.paymasterAddress = paymasterAddress;
+    this.rpcUrl = rpcUrl;
+  }
+
+  /** Validate that a string looks like a real EOA private key (0x + 64 hex chars). */
+  private static isValidPrivateKey(key: string): boolean {
+    return /^0x[0-9a-fA-F]{64}$/.test(key);
   }
 
   static async create(config: AgentWalletConfig): Promise<AgentWallet> {
-    const wallet = config.privateKey ? new Wallet(config.privateKey) : Wallet.createRandom();
+    let wallet: Wallet | HDNodeWallet;
+    if (config.privateKey && AgentWallet.isValidPrivateKey(config.privateKey)) {
+      wallet = new Wallet(config.privateKey);
+    } else {
+      if (config.privateKey) {
+        console.warn('⚠️  Invalid PRIVATE_KEY format in .env (expected 0x + 64 hex chars). Generating random wallet — balance will be $0.');
+      }
+      wallet = Wallet.createRandom();
+    }
     console.log(`🔑 EOA Address:     ${wallet.address}`);
     const network = NETWORK_CONFIG[config.network];
     const rpcUrl = config.rpcUrl ?? network.rpcUrl;
@@ -81,9 +105,13 @@ export class AgentWallet {
     const smartAccountAddress = await predictSimpleAccountAddress({
       publicClient, factory, owner: wallet.address as Address, salt: 0n,
     });
+    const paymasterAddress = (network.networkLabel === 'mainnet'
+      ? aaDefaults.paymasterMainnet : aaDefaults.paymasterFuji) ?? undefined;
+    if (!paymasterAddress) throw new Error('[AgentWallet] Could not determine VerifyingPaymaster address.');
     console.log(`🏦 Smart Account:   ${smartAccountAddress}`);
     console.log(`💳 USDC Token:      ${network.usdcAddress}`);
-    const agent = new AgentWallet(wallet, smoothsend, config, smartAccountAddress, network.usdcAddress, network.usdcDecimals);
+    console.log(`⛽ Paymaster:       ${paymasterAddress}`);
+    const agent = new AgentWallet(wallet, smoothsend, config, smartAccountAddress, network.usdcAddress, network.usdcDecimals, paymasterAddress, rpcUrl);
     await agent.checkAndResetBudget();
     return agent;
   }
@@ -120,9 +148,36 @@ export class AgentWallet {
     const transferData = encodeFunctionData({
       abi: ERC20_ABI, functionName: 'transfer', args: [request.to as Address, amountWei],
     });
+
+    // For user-pays-erc20, the paymaster pulls USDC from the smart account via safeTransferFrom.
+    // The smart account must approve the paymaster contract first.
+    const network = NETWORK_CONFIG[this.config.network];
+    const publicClient = createPublicClient({ chain: network.chain, transport: http(this.rpcUrl) });
+    const currentAllowance = await publicClient.readContract({
+      address: this.usdcAddress, abi: ERC20_ABI,
+      functionName: 'allowance',
+      args: [this.smartAccountAddress, this.paymasterAddress],
+    });
+    const approveAmount = parseUnits('1000', this.usdcDecimals); // approve 1000 USDC once
+
+    let calls: Array<{ to: Address; data: `0x${string}`; value: bigint }>;
+    if (currentAllowance < approveAmount) {
+      const approveData = encodeFunctionData({
+        abi: ERC20_ABI, functionName: 'approve',
+        args: [this.paymasterAddress, approveAmount],
+      });
+      calls = [
+        { to: this.usdcAddress, data: approveData, value: 0n },
+        { to: this.usdcAddress, data: transferData, value: 0n },
+      ];
+      console.log(`   ✅  Approving paymaster to spend USDC...`);
+    } else {
+      calls = [{ to: this.usdcAddress, data: transferData, value: 0n }];
+    }
+
     console.log(`   ✍️  Signing & submitting sponsored UserOp...`);
-    const result = await this.smoothsend.submitCall({
-      call: { to: this.usdcAddress, data: transferData, value: 0n },
+    const result = await this.smoothsend.submitCalls({
+      calls,
       mode: 'user-pays-erc20',
       paymaster: { token: this.usdcAddress, precheckBalance: true },
       waitForReceipt: true,
@@ -130,11 +185,24 @@ export class AgentWallet {
     console.log(`   ✅ Payment succeeded!`);
     console.log(`      UserOpHash: ${result.userOpHash}`);
     if (result.transactionHash) console.log(`      TxHash:     ${result.transactionHash}`);
-    await this.recordSpending(parseFloat(totalCost));
+
+    // Use actual gas cost from the on-chain receipt — actualGasCost is in wei
+    // But the paymaster enforces a minimum fee floor ($0.01).
+    const MIN_GAS_FEE_USD = 0.01;
+    const avaxPriceUSD = 30; // rough AVAX/USD price
+    const actualGasCostWei = result.receipt?.actualGasCost
+      ? BigInt(result.receipt.actualGasCost)
+      : 0n;
+    const actualGasAvax = Number(actualGasCostWei) / 1e18;
+    const actualGasUSD = Math.max(actualGasAvax * avaxPriceUSD, MIN_GAS_FEE_USD);
+    const gasCost = actualGasUSD.toFixed(6);
+
+    const realTotalCost = (parseFloat(request.amount) + parseFloat(gasCost)).toFixed(6);
+    await this.recordSpending(parseFloat(realTotalCost));
     const budget = await this.getBudgetStatus();
     return {
-      txHash: result.transactionHash ?? result.userOpHash, totalCost,
-      gasCost: gasCostUSDC, apiCost: request.amount,
+      txHash: result.transactionHash ?? result.userOpHash, totalCost: realTotalCost,
+      gasCost, apiCost: request.amount,
       remainingBudget: budget.remaining, receipt: result.receipt ?? undefined,
     };
   }
