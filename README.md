@@ -8,7 +8,7 @@ Built on [SmoothSend](https://smoothsend.xyz) ERC-4337 infrastructure (Verifying
 
 ## ✨ Live Demo
 
-**[agent-wallet.vercel.app](https://agent-wallet.vercel.app)** — try the x402 flow live:
+**[x402avax.vercel.app](https://x402avax.vercel.app/)** — try the x402 flow live:
 
 1. Toggle **x402 OFF** → see the raw `402 Payment Required` error with price
 2. Toggle **x402 ON** → wallet auto-pays in USDC and returns the data
