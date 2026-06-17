@@ -1,0 +1,74 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-midnight text-white antialiased;
+  }
+}
+
+@layer components {
+  .step-card {
+    @apply border border-white/10 rounded-xl p-5 bg-card/80 backdrop-blur-sm
+           transition-all duration-500;
+  }
+  .step-active {
+    @apply border-accent-purple/40 bg-card shadow-lg shadow-accent-purple/5;
+  }
+  .step-done {
+    @apply border-accent-green/30 bg-card/90;
+  }
+}
+
+/* Terminal-like text */
+.terminal-line::before {
+  content: '$ ';
+  @apply text-accent-cyan font-bold;
+}
+
+.terminal-line {
+  @apply font-mono text-sm text-gray-300;
+}
+
+/* Scan line effect */
+@keyframes scanline {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+
+.scanline::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(139, 92, 246, 0.15), transparent);
+  animation: scanline 4s linear infinite;
+  pointer-events: none;
+}
+
+/* Glow for active elements */
+.glow-purple {
+  box-shadow: 0 0 20px rgba(139, 92, 246, 0.15), 0 0 40px rgba(139, 92, 246, 0.05);
+}
+
+/* Flow arrow */
+.flow-arrow {
+  @apply text-gray-600 text-xl;
+}
+
+/* Pulse dot */
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  @apply bg-accent-purple;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.3); }
+}
