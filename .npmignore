@@ -6,3 +6,4 @@ x402-demo-api/
 .env.example
 .npmrc
 tsconfig.json
+handoff.md

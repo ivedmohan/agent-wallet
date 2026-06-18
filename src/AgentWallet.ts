@@ -31,6 +31,8 @@ const ERC20_ABI = [
     outputs: [{ name: '', type: 'uint256' }] },
 ] as const;
 
+const ERC20_TRANSFER_TOPIC = id('Transfer(address,address,uint256)');
+
 // ── ERC-8004 Fuji Addresses ───────────────────────────────────
 const IDENTITY_REGISTRY_FUJI = '0x3F5Ee79771C2628D3941Bc015d306C194DA2E425' as Address;
 const REPUTATION_REGISTRY_FUJI = '0x351487d9E592B0D6682b0027a2eA099ab2652B10' as Address;
@@ -242,9 +244,9 @@ export class AgentWallet {
     }
 
     const sdkGasCost = await this.estimateSmoothSendGasCost(calls);
-    const gasCostUSDC = sdkGasCost ?? await this.estimateGasCost();
-    const totalCost = (parseFloat(request.amount) + parseFloat(gasCostUSDC)).toFixed(6);
-    console.log(`   Gas cost:  ~$${gasCostUSDC} USDC${sdkGasCost ? ' (SmoothSend SDK)' : ' (fallback estimate)'}`);
+    const estimatedGasCostUSDC = sdkGasCost ?? await this.estimateGasCost();
+    const totalCost = (parseFloat(request.amount) + parseFloat(estimatedGasCostUSDC)).toFixed(6);
+    console.log(`   Gas cost:  ~$${estimatedGasCostUSDC} USDC${sdkGasCost ? ' (SmoothSend SDK)' : ' (fallback estimate)'}`);
 
     const balance = await this.getBalance();
     if (parseFloat(balance) < parseFloat(totalCost)) {
@@ -262,14 +264,15 @@ export class AgentWallet {
     console.log(`      UserOpHash: ${result.userOpHash}`);
     if (result.transactionHash) console.log(`      TxHash:     ${result.transactionHash}`);
 
-    const gasCost = gasCostUSDC;
-
+    const actualGasCost = this.parseActualGasCostUSDC(result.receipt?.logs, request.to as Address);
+    const gasCost = actualGasCost ?? estimatedGasCostUSDC;
     const realTotalCost = (parseFloat(request.amount) + parseFloat(gasCost)).toFixed(6);
     await this.recordSpending(parseFloat(realTotalCost));
     const budget = await this.getBudgetStatus();
     return {
       txHash: result.transactionHash ?? result.userOpHash, totalCost: realTotalCost,
-      gasCost, apiCost: request.amount,
+      gasCost, estimatedGasCost: estimatedGasCostUSDC, actualGasCost: actualGasCost ?? gasCost,
+      apiCost: request.amount,
       remainingBudget: budget.remaining, receipt: result.receipt ?? undefined,
     };
   }
@@ -495,6 +498,39 @@ export class AgentWallet {
     } catch {
       return null;
     }
+  }
+
+  private parseActualGasCostUSDC(logs: unknown, merchantAddress: Address): string | null {
+    if (!Array.isArray(logs)) return null;
+    const merchant = merchantAddress.toLowerCase();
+    const smartAccount = this.smartAccountAddress.toLowerCase();
+    const token = this.usdcAddress.toLowerCase();
+
+    for (const log of logs) {
+      if (!log || typeof log !== 'object') continue;
+      const entry = log as {
+        address?: string;
+        topics?: string[];
+        data?: string;
+      };
+      if (!entry.address || entry.address.toLowerCase() !== token) continue;
+      if (!Array.isArray(entry.topics) || entry.topics.length < 3) continue;
+      if (entry.topics[0]?.toLowerCase() !== ERC20_TRANSFER_TOPIC.toLowerCase()) continue;
+
+      const fromTopic = `0x${entry.topics[1].slice(-40)}`.toLowerCase();
+      const toTopic = `0x${entry.topics[2].slice(-40)}`.toLowerCase();
+      if (fromTopic !== smartAccount) continue;
+      if (toTopic === merchant) continue;
+      if (!entry.data) continue;
+
+      try {
+        return (Number(BigInt(entry.data)) / 10 ** this.usdcDecimals).toFixed(6);
+      } catch {
+        return null;
+      }
+    }
+
+    return null;
   }
 
   private async recordSpending(amount: number): Promise<void> {

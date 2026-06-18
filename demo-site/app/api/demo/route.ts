@@ -126,10 +126,10 @@ export async function POST(request: NextRequest) {
     const result = await x402.request(merchantUrl);
 
     steps[steps.length - 1].status = 'done';
-    const gasDetail = result.payment?.gasCost && parseFloat(result.payment.gasCost) > 0.0001
-      ? `Gas: ~$${parseFloat(result.payment.gasCost).toFixed(4)}`
-      : `Gas: <$0.0001`;
-    steps[steps.length - 1].detail = `$${result.payment?.apiCost} API + ${gasDetail} · Tx: ${result.payment?.txHash?.slice(0, 18)}...`;
+    const estimatedGas = result.payment?.estimatedGasCost ?? result.payment?.gasCost;
+    const actualGas = result.payment?.actualGasCost ?? result.payment?.gasCost;
+    steps[steps.length - 1].detail =
+      `$${result.payment?.apiCost} API + est $${estimatedGas} / settled $${actualGas} · Tx: ${result.payment?.txHash?.slice(0, 18)}...`;
 
     addStep('Data Received', `${result.data.city}: ${result.data.temperature}°C, ${result.data.condition}`, 'done');
 

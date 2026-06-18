@@ -23,6 +23,8 @@ interface DemoResult {
     txHash: string;
     totalCost: string;
     gasCost: string;
+    estimatedGasCost?: string;
+    actualGasCost?: string;
     apiCost: string;
     remainingBudget: string;
   };
@@ -110,6 +112,7 @@ export default function DemoPage() {
   const [selectedCity, setSelectedCity] = useState('Tokyo');
   const [x402Enabled, setX402Enabled] = useState(false);
   const [running, setRunning] = useState(false);
+  const [requestPhase, setRequestPhase] = useState<'idle' | 'connecting' | 'quoting' | 'paying' | 'settling'>('idle');
   const [result, setResult] = useState<DemoResult | null>(null);
   const [paymentRequired, setPaymentRequired] = useState<PaymentRequiredData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -162,8 +165,16 @@ export default function DemoPage() {
     setLogs((prev) => [...prev, { text, type }]);
   };
 
+  const requestButtonLabel =
+    requestPhase === 'connecting' ? 'Checking merchant...' :
+    requestPhase === 'quoting' ? 'Receiving 402...' :
+    requestPhase === 'paying' ? 'Sending payment...' :
+    requestPhase === 'settling' ? 'Settling fee...' :
+    'Request Weather Data';
+
   const requestData = useCallback(async () => {
     setRunning(true);
+    setRequestPhase('connecting');
     setResult(null);
     setPaymentRequired(null);
     setError(null);
@@ -175,6 +186,7 @@ export default function DemoPage() {
       try {
         const res = await fetch(`/api/merchant?type=weather&city=${selectedCity}`);
         if (res.status === 402) {
+          setRequestPhase('quoting');
           const price = res.headers.get('x-payment-price') || 'unknown';
           const recipient = res.headers.get('x-payment-recipient') || '';
           const token = res.headers.get('x-payment-token') || 'USDC';
@@ -202,6 +214,7 @@ export default function DemoPage() {
     // x402 ON: run the full demo flow
     addLog('🤖 Initializing Agent Wallet...', 'info');
     try {
+      setRequestPhase('paying');
       const res = await fetch('/api/demo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -218,8 +231,12 @@ export default function DemoPage() {
       }
 
       if (data.success && data.payment) {
+        setRequestPhase('settling');
         addLog(`───────────────────────────────────`, 'info');
         addLog(`💰 Total: $${data.payment.totalCost} USDC  │  API: $${data.payment.apiCost}  │  SmoothSend gas: $${data.payment.gasCost}`, 'success');
+        if (data.payment.estimatedGasCost && data.payment.actualGasCost && data.payment.estimatedGasCost !== data.payment.actualGasCost) {
+          addLog(`   Estimate: $${data.payment.estimatedGasCost}  →  Settled: $${data.payment.actualGasCost}`, 'info');
+        }
         addLog(`🔗 TxHash: ${data.payment.txHash}`, 'info');
         addLog(`───────────────────────────────────`, 'info');
       }
@@ -227,8 +244,10 @@ export default function DemoPage() {
       const msg = err?.message || 'Request failed';
       setError(msg);
       addLog(`❌ ${msg}`, 'error');
+      setRequestPhase('idle');
     } finally {
       setRunning(false);
+      setRequestPhase('idle');
     }
   }, [x402Enabled, selectedCity]);
 
@@ -367,18 +386,32 @@ export default function DemoPage() {
                   disabled={running}
                   className={`w-full py-3.5 px-6 rounded-xl font-semibold text-sm transition-all duration-300 flex items-center justify-center gap-2 ${
                     running
-                      ? 'bg-white/5 text-white/30 cursor-not-allowed'
+                      ? 'bg-white/5 text-white/30 cursor-not-allowed border border-white/10'
                       : x402Enabled
                         ? 'bg-violet-500 hover:bg-violet-400 text-white hover:shadow-lg hover:shadow-violet-500/20 active:scale-[0.98]'
                         : 'bg-white/10 hover:bg-white/15 text-white/80 hover:text-white active:scale-[0.98] border border-white/10'
                   }`}
                 >
                   {running ? (
-                    <><SpinnerIcon className="w-4 h-4" /> Processing...</>
+                    <span className="flex items-center gap-2">
+                      <SpinnerIcon className="w-4 h-4" />
+                      <span>{requestButtonLabel}</span>
+                      <span className="flex items-center gap-1 translate-y-[1px]" aria-hidden="true">
+                        <span className="h-1.5 w-1.5 rounded-full bg-current animate-bounce [animation-delay:-0.2s]" />
+                        <span className="h-1.5 w-1.5 rounded-full bg-current animate-bounce [animation-delay:-0.1s]" />
+                        <span className="h-1.5 w-1.5 rounded-full bg-current animate-bounce" />
+                      </span>
+                    </span>
                   ) : (
                     <><BoltIcon /> Request Weather Data</>
                   )}
                 </button>
+                {running && (
+                  <div className="flex items-center justify-between text-[11px] text-white/35 font-mono pt-1">
+                    <span className="uppercase tracking-[0.2em]">{requestPhase}</span>
+                    <span className="animate-pulse">SmoothSend + x402</span>
+                  </div>
+                )}
               </div>
 
               {/* 402 Error Display (x402 OFF) */}
@@ -484,8 +517,12 @@ export default function DemoPage() {
                       <span className="font-mono text-white/80">${result.payment.apiCost} USDC</span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-white/40">Gas via SmoothSend SDK</span>
-                      <span className="font-mono text-white/60">${result.payment.gasCost} USDC</span>
+                      <span className="text-white/40">Estimated gas</span>
+                      <span className="font-mono text-white/60">${result.payment.estimatedGasCost ?? result.payment.gasCost} USDC</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-white/40">Actual settled fee</span>
+                      <span className="font-mono text-white/60">${result.payment.actualGasCost ?? result.payment.gasCost} USDC</span>
                     </div>
                     <div className="pt-2 border-t border-white/5 flex justify-between items-center">
                       <span className="text-xs font-semibold text-white/50">Total</span>
@@ -700,8 +737,9 @@ const weather = await x402.request(
 );
 
 console.log(\`\${weather.data.temperature}°C, \${weather.data.condition}\`);
-console.log(\`API: $\${weather.payment.apiCost} · Gas: $\${weather.payment.gasCost}\`);
-// Gas is returned by the SmoothSend-backed SDK after the UserOp settles.`}
+console.log(\`API: $\${weather.payment.apiCost} · Estimated gas: $\${weather.payment.estimatedGasCost}\`);
+console.log(\`Settled fee: $\${weather.payment.actualGasCost}\`);
+// Estimate is quoted first, then settled fee is captured after the tx lands.`}
             </pre>
           </div>
         )}
@@ -717,7 +755,7 @@ console.log(\`API: $\${weather.payment.apiCost} · Gas: $\${weather.payment.gasC
           <div className="flex items-center gap-4">
             <a href="https://www.npmjs.com/package/@vedmohan/agent-wallet" target="_blank" rel="noopener noreferrer"
               className="text-[10px] text-white/25 hover:text-white/50 transition-colors font-mono">
-              SDK v1.0.0
+              SDK v2.0.3
             </a>
             <a href="https://smoothsend.xyz" target="_blank" rel="noopener noreferrer"
               className="flex items-center gap-3 text-sm md:text-base font-semibold text-white/45 hover:text-white/80 transition-all group">

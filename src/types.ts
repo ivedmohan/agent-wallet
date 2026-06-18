@@ -23,6 +23,8 @@ export interface PaymentResult {
   txHash: string;
   totalCost: string;
   gasCost: string;
+  estimatedGasCost?: string;
+  actualGasCost?: string;
   apiCost: string;
   remainingBudget: string;
   receipt?: any;
