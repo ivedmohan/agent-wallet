@@ -1,7 +1,7 @@
 import { Wallet, type HDNodeWallet, id } from 'ethers';
 import {
   createPublicClient, createWalletClient, http,
-  encodeFunctionData, parseUnits, type Address, type Log,
+  encodeFunctionData, formatUnits, parseUnits, type Address, type Log,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { avalancheFuji, avalanche } from 'viem/chains';
@@ -209,14 +209,7 @@ export class AgentWallet {
     if (request.memo) console.log(`   Memo: ${request.memo}`);
     await this.checkAndResetBudget();
     await this.validatePayment(request);
-    const gasCostUSDC = await this.estimateGasCost();
-    const totalCost = (parseFloat(request.amount) + parseFloat(gasCostUSDC)).toFixed(6);
     console.log(`   API cost:  $${request.amount} USDC`);
-    console.log(`   Gas cost:  ~$${gasCostUSDC} USDC`);
-    const balance = await this.getBalance();
-    if (parseFloat(balance) < parseFloat(totalCost)) {
-      throw new Error(`Insufficient balance: have ${balance} USDC, need ${totalCost} USDC. Send USDC to: ${this.smartAccountAddress}`);
-    }
     const amountWei = parseUnits(request.amount, this.usdcDecimals);
     const transferData = encodeFunctionData({
       abi: ERC20_ABI, functionName: 'transfer', args: [request.to as Address, amountWei],
@@ -248,6 +241,16 @@ export class AgentWallet {
       calls = [{ to: this.usdcAddress, data: transferData, value: 0n }];
     }
 
+    const sdkGasCost = await this.estimateSmoothSendGasCost(calls);
+    const gasCostUSDC = sdkGasCost ?? await this.estimateGasCost();
+    const totalCost = (parseFloat(request.amount) + parseFloat(gasCostUSDC)).toFixed(6);
+    console.log(`   Gas cost:  ~$${gasCostUSDC} USDC${sdkGasCost ? ' (SmoothSend SDK)' : ' (fallback estimate)'}`);
+
+    const balance = await this.getBalance();
+    if (parseFloat(balance) < parseFloat(totalCost)) {
+      throw new Error(`Insufficient balance: have ${balance} USDC, need ${totalCost} USDC. Send USDC to: ${this.smartAccountAddress}`);
+    }
+
     console.log(`   ✍️  Signing & submitting sponsored UserOp...`);
     const result = await this.smoothsend.submitCalls({
       calls,
@@ -259,16 +262,7 @@ export class AgentWallet {
     console.log(`      UserOpHash: ${result.userOpHash}`);
     if (result.transactionHash) console.log(`      TxHash:     ${result.transactionHash}`);
 
-    // Use actual gas cost from the on-chain receipt — actualGasCost is in wei
-    // But the paymaster enforces a minimum fee floor ($0.01).
-    const MIN_GAS_FEE_USD = 0.01;
-    const avaxPriceUSD = 30; // rough AVAX/USD price
-    const actualGasCostWei = result.receipt?.actualGasCost
-      ? BigInt(result.receipt.actualGasCost)
-      : 0n;
-    const actualGasAvax = Number(actualGasCostWei) / 1e18;
-    const actualGasUSD = Math.max(actualGasAvax * avaxPriceUSD, MIN_GAS_FEE_USD);
-    const gasCost = actualGasUSD.toFixed(6);
+    const gasCost = gasCostUSDC;
 
     const realTotalCost = (parseFloat(request.amount) + parseFloat(gasCost)).toFixed(6);
     await this.recordSpending(parseFloat(realTotalCost));
@@ -482,6 +476,25 @@ export class AgentWallet {
       const nAvax = parseFloat(fees?.txFee || '1000000');
       return ((nAvax / 1e9) * 30).toFixed(6);
     } catch { return '0.02'; }
+  }
+
+  private async estimateSmoothSendGasCost(calls: Array<{ to: Address; data: `0x${string}`; value: bigint }>): Promise<string | null> {
+    try {
+      const estimate = await this.smoothsend.estimateUserPaysFee({
+        calls,
+        paymaster: { token: this.usdcAddress, precheckBalance: true },
+      });
+      const tokenFee = estimate.feePreview?.predictedTokenFee;
+      if (!tokenFee) return null;
+      try {
+        return Number(formatUnits(BigInt(tokenFee), this.usdcDecimals)).toFixed(6);
+      } catch {
+        const decimalFee = Number(tokenFee);
+        return Number.isFinite(decimalFee) ? decimalFee.toFixed(6) : null;
+      }
+    } catch {
+      return null;
+    }
   }
 
   private async recordSpending(amount: number): Promise<void> {

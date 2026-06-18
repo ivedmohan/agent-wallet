@@ -38,11 +38,11 @@ interface PaymentRequiredData {
 }
 
 const CITIES = [
-  { name: 'Tokyo', temp: 25, condition: 'sunny', humidity: 45 },
-  { name: 'London', temp: 14, condition: 'cloudy', humidity: 72 },
-  { name: 'Dubai', temp: 38, condition: 'clear', humidity: 20 },
-  { name: 'New York', temp: 22, condition: 'partly cloudy', humidity: 55 },
-  { name: 'Singapore', temp: 30, condition: 'thunderstorms', humidity: 85 },
+  { name: 'Tokyo' },
+  { name: 'London' },
+  { name: 'Dubai' },
+  { name: 'New York' },
+  { name: 'Singapore' },
 ];
 
 // ── Icons ───────────────────────────────────────────────────────
@@ -175,7 +175,7 @@ export default function DemoPage() {
       try {
         const res = await fetch(`/api/merchant?type=weather&city=${selectedCity}`);
         if (res.status === 402) {
-          const price = res.headers.get('x-payment-price') || '0.01';
+          const price = res.headers.get('x-payment-price') || 'unknown';
           const recipient = res.headers.get('x-payment-recipient') || '';
           const token = res.headers.get('x-payment-token') || 'USDC';
           setPaymentRequired({ price, recipient, token });
@@ -219,7 +219,7 @@ export default function DemoPage() {
 
       if (data.success && data.payment) {
         addLog(`───────────────────────────────────`, 'info');
-        addLog(`💰 Total: $${data.payment.totalCost} USDC  │  API: $${data.payment.apiCost}  │  Gas: $${data.payment.gasCost}`, 'success');
+        addLog(`💰 Total: $${data.payment.totalCost} USDC  │  API: $${data.payment.apiCost}  │  SmoothSend gas: $${data.payment.gasCost}`, 'success');
         addLog(`🔗 TxHash: ${data.payment.txHash}`, 'info');
         addLog(`───────────────────────────────────`, 'info');
       }
@@ -231,8 +231,6 @@ export default function DemoPage() {
       setRunning(false);
     }
   }, [x402Enabled, selectedCity]);
-
-  const cityData = CITIES.find(c => c.name === selectedCity);
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white">
@@ -255,8 +253,8 @@ export default function DemoPage() {
             </div>
             <div className="w-px bg-white/10" />
             <div>
-              <div className="text-2xl font-bold text-white">$0.02</div>
-              <div className="text-xs text-white/30 mt-1">Avg Tx Cost (USDC)</div>
+              <div className="text-2xl font-bold text-white">Live</div>
+              <div className="text-xs text-white/30 mt-1">SDK Gas Quote</div>
             </div>
             <div className="w-px bg-white/10" />
             <div>
@@ -340,7 +338,6 @@ export default function DemoPage() {
                         }`}
                       >
                         {city.name}
-                        <span className="ml-1.5 text-xs opacity-60">{city.temp}°C</span>
                       </button>
                     ))}
                   </div>
@@ -487,7 +484,7 @@ export default function DemoPage() {
                       <span className="font-mono text-white/80">${result.payment.apiCost} USDC</span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-white/40">Gas (min. floor)</span>
+                      <span className="text-white/40">Gas via SmoothSend SDK</span>
                       <span className="font-mono text-white/60">${result.payment.gasCost} USDC</span>
                     </div>
                     <div className="pt-2 border-t border-white/5 flex justify-between items-center">
@@ -702,9 +699,9 @@ const weather = await x402.request(
   'https://api.example.com/weather?city=Tokyo'
 );
 
-console.log(\`\${weather.data.temp}°C, \${weather.data.condition}\`);
-// 💸 Auto-paid $0.02 USDC — all in USDC
-//    API: $0.01  ·  Gas: $0.01 (min. floor)`}
+console.log(\`\${weather.data.temperature}°C, \${weather.data.condition}\`);
+console.log(\`API: $\${weather.payment.apiCost} · Gas: $\${weather.payment.gasCost}\`);
+// Gas is returned by the SmoothSend-backed SDK after the UserOp settles.`}
             </pre>
           </div>
         )}
@@ -723,8 +720,8 @@ console.log(\`\${weather.data.temp}°C, \${weather.data.condition}\`);
               SDK v1.0.0
             </a>
             <a href="https://smoothsend.xyz" target="_blank" rel="noopener noreferrer"
-              className="flex items-center gap-2 text-xs text-white/30 hover:text-white/60 transition-all group">
-              <svg width="19" height="22" viewBox="0 0 140 162" fill="none" xmlns="http://www.w3.org/2000/svg" className="opacity-40 group-hover:opacity-70 transition-opacity">
+              className="flex items-center gap-3 text-sm md:text-base font-semibold text-white/45 hover:text-white/80 transition-all group">
+              <svg width="30" height="34" viewBox="0 0 140 162" fill="none" xmlns="http://www.w3.org/2000/svg" className="opacity-55 group-hover:opacity-85 transition-opacity">
                 <path d="M104.738 67.8756C107.331 68.5157 109.524 70.1513 110.832 72.4175C116.719 82.6134 122.266 92.2219 127.729 101.684C138.717 120.716 120.282 144.066 98.5128 138.692L51.0942 126.984C48.9172 126.447 48.5803 123.574 50.5602 122.43L75.6752 107.93C76.7939 107.284 78.1193 107.097 79.3735 107.406L82.8988 108.277C87.2526 109.351 90.9396 104.681 88.742 100.875L69.7345 67.9528C67.5309 64.1362 70.9845 59.5423 75.2631 60.5986L104.738 67.8756Z" fill="currentColor"/>
                 <path d="M34.5435 93.368C31.9513 92.7282 29.7583 91.0925 28.4499 88.8263C22.5633 78.6304 17.0158 69.0219 11.5527 59.5595C0.565034 40.5279 19 17.1777 40.7694 22.5522L88.1879 34.2594C90.3648 34.7967 90.7017 37.6702 88.7219 38.8133L63.6073 53.3134C62.4885 53.9593 61.1631 54.1472 59.9089 53.8376L56.3833 52.9672C52.0294 51.8924 48.3425 56.5625 50.5401 60.3688L69.5479 93.2909C71.7514 97.1075 68.2979 101.702 64.0193 100.645L34.5435 93.368Z" fill="currentColor"/>
               </svg>

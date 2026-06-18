@@ -39,7 +39,7 @@ contract IdentityRegistry is ERC721URIStorage, Ownable {
     // ── Registration ────────────────────────────────────────────
     function register(string calldata agentURI) external returns (uint256 agentId) {
         agentId = _nextAgentId++;
-        _safeMint(msg.sender, agentId);
+        _mint(msg.sender, agentId);
         _setTokenURI(agentId, agentURI);
         _agentWallets[agentId] = msg.sender;
         emit Registered(agentId, agentURI, msg.sender);
@@ -49,7 +49,7 @@ contract IdentityRegistry is ERC721URIStorage, Ownable {
 
     function register(string calldata agentURI, MetadataEntry[] calldata metadata) external returns (uint256 agentId) {
         agentId = _nextAgentId++;
-        _safeMint(msg.sender, agentId);
+        _mint(msg.sender, agentId);
         _setTokenURI(agentId, agentURI);
         _agentWallets[agentId] = msg.sender;
         emit Registered(agentId, agentURI, msg.sender);
@@ -62,7 +62,7 @@ contract IdentityRegistry is ERC721URIStorage, Ownable {
 
     function register() external returns (uint256 agentId) {
         agentId = _nextAgentId++;
-        _safeMint(msg.sender, agentId);
+        _mint(msg.sender, agentId);
         _agentWallets[agentId] = msg.sender;
         emit Registered(agentId, "", msg.sender);
     }
