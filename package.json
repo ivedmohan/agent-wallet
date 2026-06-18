@@ -1,6 +1,6 @@
 {
   "name": "@vedmohan/agent-wallet",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "x402 payments where AI agents pay their own way — API + gas, all in USDC, no AVAX needed. Built on SmoothSend ERC-4337 infrastructure.",
   "type": "module",
   "main": "dist/index.js",

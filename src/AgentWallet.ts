@@ -11,7 +11,10 @@ import {
 } from '@smoothsend/sdk/avax';
 import type { SmoothSendAvaxClient } from '@smoothsend/sdk/avax';
 import { McpClient } from './McpClient.js';
-import type { AgentWalletConfig, PaymentRequest, PaymentResult, BudgetStatus } from './types.js';
+import type {
+  AgentWalletConfig, PaymentRequest, PaymentResult, BudgetStatus,
+  AgentIdentity, AgentReputation, AgentListing, FeedbackInput,
+} from './types.js';
 
 const ERC20_ABI = [
   { name: 'transfer', type: 'function', stateMutability: 'nonpayable',
@@ -28,6 +31,50 @@ const ERC20_ABI = [
     outputs: [{ name: '', type: 'uint256' }] },
 ] as const;
 
+// ── ERC-8004 Fuji Addresses ───────────────────────────────────
+const IDENTITY_REGISTRY_FUJI = '0x3F5Ee79771C2628D3941Bc015d306C194DA2E425' as Address;
+const REPUTATION_REGISTRY_FUJI = '0x351487d9E592B0D6682b0027a2eA099ab2652B10' as Address;
+
+// ── ERC-8004 Minimal ABIs ─────────────────────────────────────
+const IDENTITY_REGISTRY_ABI = [
+  { name: 'register', type: 'function', stateMutability: 'nonpayable',
+    inputs: [{ name: 'agentURI', type: 'string' }],
+    outputs: [{ name: 'agentId', type: 'uint256' }] },
+  { name: 'getAgentWallet', type: 'function', stateMutability: 'view',
+    inputs: [{ name: 'agentId', type: 'uint256' }],
+    outputs: [{ name: '', type: 'address' }] },
+  { name: 'ownerOf', type: 'function', stateMutability: 'view',
+    inputs: [{ name: 'tokenId', type: 'uint256' }],
+    outputs: [{ name: '', type: 'address' }] },
+] as const;
+
+const REPUTATION_REGISTRY_ABI = [
+  { name: 'giveFeedback', type: 'function', stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'agentId', type: 'uint256' },
+      { name: 'value', type: 'int128' },
+      { name: 'valueDecimals', type: 'uint8' },
+      { name: 'tag1', type: 'string' },
+      { name: 'tag2', type: 'string' },
+      { name: 'endpoint', type: 'string' },
+      { name: 'feedbackURI', type: 'string' },
+      { name: 'feedbackHash', type: 'bytes32' },
+    ],
+    outputs: [] },
+  { name: 'getSummary', type: 'function', stateMutability: 'view',
+    inputs: [
+      { name: 'agentId', type: 'uint256' },
+      { name: 'clientAddresses', type: 'address[]' },
+      { name: 'tag1', type: 'string' },
+      { name: 'tag2', type: 'string' },
+    ],
+    outputs: [
+      { name: 'count', type: 'uint64' },
+      { name: 'summaryValue', type: 'int128' },
+      { name: 'summaryValueDecimals', type: 'uint8' },
+    ] },
+] as const;
+
 const NETWORK_CONFIG = {
   'avalanche-fuji': {
     chain: avalancheFuji,
@@ -35,6 +82,8 @@ const NETWORK_CONFIG = {
     usdcAddress: '0x5425890298aed601595a70AB815c96711a31Bc65' as Address,
     usdcDecimals: 6,
     networkLabel: 'testnet' as const,
+    identityRegistry: IDENTITY_REGISTRY_FUJI,
+    reputationRegistry: REPUTATION_REGISTRY_FUJI,
   },
   'avalanche-mainnet': {
     chain: avalanche,
@@ -42,6 +91,8 @@ const NETWORK_CONFIG = {
     usdcAddress: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E' as Address,
     usdcDecimals: 6,
     networkLabel: 'mainnet' as const,
+    identityRegistry: undefined as Address | undefined,
+    reputationRegistry: undefined as Address | undefined,
   },
 } as const;
 
@@ -58,12 +109,16 @@ export class AgentWallet {
   private dailySpent: number = 0;
   private txCountToday: number = 0;
   private lastResetDate: Date = new Date();
+  private _agentId: number | null = null;
+  private _identityRegistryAddress: Address;
+  private _reputationRegistryAddress: Address;
 
   private constructor(
     wallet: Wallet | HDNodeWallet, smoothsend: SmoothSendAvaxClient,
     config: AgentWalletConfig, smartAccountAddress: Address,
     usdcAddress: Address, usdcDecimals: number,
     paymasterAddress: Address, rpcUrl: string,
+    identityRegistryAddress: Address, reputationRegistryAddress: Address,
   ) {
     this.wallet = wallet; this.smoothsend = smoothsend;
     this.mcp = new McpClient(); this.config = config;
@@ -71,7 +126,11 @@ export class AgentWallet {
     this.usdcAddress = usdcAddress; this.usdcDecimals = usdcDecimals;
     this.paymasterAddress = paymasterAddress;
     this.rpcUrl = rpcUrl;
+    this._identityRegistryAddress = identityRegistryAddress;
+    this._reputationRegistryAddress = reputationRegistryAddress;
   }
+
+  get agentId(): number | null { return this._agentId; }
 
   /** Validate that a string looks like a real EOA private key (0x + 64 hex chars). */
   private static isValidPrivateKey(key: string): boolean {
@@ -111,7 +170,21 @@ export class AgentWallet {
     console.log(`🏦 Smart Account:   ${smartAccountAddress}`);
     console.log(`💳 USDC Token:      ${network.usdcAddress}`);
     console.log(`⛽ Paymaster:       ${paymasterAddress}`);
-    const agent = new AgentWallet(wallet, smoothsend, config, smartAccountAddress, network.usdcAddress, network.usdcDecimals, paymasterAddress, rpcUrl);
+
+    // Resolve ERC-8004 registry addresses
+    const identityRegistryAddress = config.identityRegistryAddress
+      ? (config.identityRegistryAddress as Address)
+      : (network.identityRegistry ?? IDENTITY_REGISTRY_FUJI);
+    const reputationRegistryAddress = config.reputationRegistryAddress
+      ? (config.reputationRegistryAddress as Address)
+      : (network.reputationRegistry ?? REPUTATION_REGISTRY_FUJI);
+
+    const agent = new AgentWallet(
+      wallet, smoothsend, config, smartAccountAddress,
+      network.usdcAddress, network.usdcDecimals,
+      paymasterAddress, rpcUrl,
+      identityRegistryAddress, reputationRegistryAddress,
+    );
     await agent.checkAndResetBudget();
     return agent;
   }
@@ -218,6 +291,159 @@ export class AgentWallet {
       dailyLimit: this.config.dailyLimit, spentToday: this.dailySpent.toFixed(6),
       remaining: Math.max(0, limit - this.dailySpent).toFixed(6),
       txCount: this.txCountToday, resetsAt: this.getNextResetTime(),
+    };
+  }
+
+  // ── ERC-8004: Identity Registration ────────────────────────
+
+  /** Register this agent in the ERC-8004 IdentityRegistry. Returns the assigned agentId. */
+  async registerIdentity(name: string, description: string): Promise<number> {
+    const registrationFile = {
+      type: 'https://eips.ethereum.org/EIPS/eip-8004#registration-v1',
+      name,
+      description,
+      image: '',
+      services: [
+        { name: 'x402', endpoint: `https://agent-wallet.vercel.app/api/merchant`, version: '1.0.0' },
+      ],
+      x402Support: true,
+      active: true,
+      registrations: [],
+      supportedTrust: ['reputation'],
+    };
+    const agentURI = 'data:application/json;base64,' + Buffer.from(JSON.stringify(registrationFile)).toString('base64');
+
+    const registerData = encodeFunctionData({
+      abi: IDENTITY_REGISTRY_ABI,
+      functionName: 'register',
+      args: [agentURI],
+    });
+
+    console.log(`📝 Registering agent "${name}" in ERC-8004 IdentityRegistry...`);
+    const result = await this.smoothsend.submitCalls({
+      calls: [{ to: this._identityRegistryAddress, data: registerData, value: 0n }],
+      mode: 'user-pays-erc20',
+      paymaster: { token: this.usdcAddress, precheckBalance: true },
+      waitForReceipt: true,
+    });
+
+    // Check tx hash — if absent, the tx likely failed
+    if (!result.transactionHash) {
+      throw new Error(`[AgentWallet] Registration transaction failed. Ensure your smart account has USDC balance.`);
+    }
+
+    // The agentId is emitted in the Registered event — we parse it from logs
+    const agentId = this._parseAgentIdFromLogs(result.receipt?.logs ?? []);
+    if (!agentId) throw new Error('[AgentWallet] Could not determine agentId from registration receipt');
+    this._agentId = agentId;
+    const txHash = result.transactionHash ?? result.userOpHash;
+    console.log(`   ✅ Registered! Agent ID: ${agentId} — Tx: ${txHash}`);
+    return agentId;
+  }
+
+  /** Parse agentId from IdentityRegistry.Registered event logs */
+  private _parseAgentIdFromLogs(logs: any[]): number | null {
+    for (const log of logs) {
+      // IdentityRegistry emits Registered(uint256 indexed agentId, string agentURI, address indexed owner)
+      // Topic[0] = keccak256("Registered(uint256,string,address)")
+      const topic0 = log.topics?.[0];
+      if (!topic0 || typeof topic0 !== 'string') continue;
+      const regTopic = '0x47838e11de867dab89ceb6526646a4c747c0df7ff172aae9b43df6f5cd2fee4c';
+      if (topic0.toLowerCase() === regTopic) {
+        const data = log.topics?.[1];
+        if (data) return Number(BigInt(data));
+      }
+    }
+    return null;
+  }
+
+  // ── ERC-8004: Reputation ────────────────────────────────────
+
+  /** Get reputation score for an agent from the ReputationRegistry */
+  async getReputation(agentId: number): Promise<{ count: number; summaryValue: number; valueDecimals: number; score: number }> {
+    const network = NETWORK_CONFIG[this.config.network];
+    const client = createPublicClient({ chain: network.chain, transport: http(this.rpcUrl) });
+
+    try {
+      const result = await client.readContract({
+        address: this._reputationRegistryAddress,
+        abi: REPUTATION_REGISTRY_ABI,
+        functionName: 'getSummary',
+        args: [BigInt(agentId), [this.smartAccountAddress], '', ''],
+      }) as [bigint, bigint, number];
+
+      const count = Number(result[0]);
+      const summaryValue = Number(result[1]);
+      const valueDecimals = Number(result[2]);
+      // Normalize to a 0-100 average score
+      // summaryValue is the SUM of all feedback values. Divide by count for the average.
+      const score = count > 0
+        ? Math.min(100, Math.round(summaryValue / (10 ** valueDecimals) / count))
+        : 0;
+      return { count, summaryValue, valueDecimals, score };
+    } catch {
+      return { count: 0, summaryValue: 0, valueDecimals: 0, score: 0 };
+    }
+  }
+
+  /** Submit reputation feedback about another agent after a transaction */
+  async submitFeedback(input: FeedbackInput): Promise<string> {
+    // Build args with proper types for the ABI
+    const agentId = BigInt(input.agentId);
+    const value = BigInt(Math.round(input.value * 10 ** 2));
+    const tag1 = input.tag1 ?? 'x402';
+    const tag2 = input.tag2 ?? '';
+    const endpoint = '';
+    const feedbackURI = input.feedbackURI ?? '';
+    const feedbackHash = '0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`;
+
+    const feedbackData = encodeFunctionData({
+      abi: REPUTATION_REGISTRY_ABI,
+      functionName: 'giveFeedback',
+      // Use a relaxed type for the args tuple since viem's strict ABI typing
+      // doesn't perfectly match our runtime values
+      args: [agentId, value, 2 as const, tag1, tag2, endpoint, feedbackURI, feedbackHash] as unknown as readonly [bigint, bigint, number, string, string, string, string, `0x${string}`],
+    });
+
+    console.log(`⭐ Submitting feedback for agent #${input.agentId}: ${input.value} pts`);
+    const result = await this.smoothsend.submitCalls({
+      calls: [{ to: this._reputationRegistryAddress, data: feedbackData, value: 0n }],
+      mode: 'user-pays-erc20',
+      paymaster: { token: this.usdcAddress, precheckBalance: true },
+      waitForReceipt: true,
+    });
+    const txHash = result.transactionHash ?? result.userOpHash;
+    console.log(`   ✅ Feedback submitted! Tx: ${txHash}`);
+    return txHash;
+  }
+
+  /** Get a marketplace listing for this wallet (after registration) */
+  async getAgentListing(agentId: number): Promise<{
+    identity: { agentId: number; owner: string; agentWallet: string };
+    reputation: { count: number; score: number };
+  }> {
+    const network = NETWORK_CONFIG[this.config.network];
+    const client = createPublicClient({ chain: network.chain, transport: http(this.rpcUrl) });
+
+    const owner = await client.readContract({
+      address: this._identityRegistryAddress,
+      abi: IDENTITY_REGISTRY_ABI,
+      functionName: 'ownerOf',
+      args: [BigInt(agentId)],
+    }) as Address;
+
+    const agentWallet = await client.readContract({
+      address: this._identityRegistryAddress,
+      abi: IDENTITY_REGISTRY_ABI,
+      functionName: 'getAgentWallet',
+      args: [BigInt(agentId)],
+    }) as Address;
+
+    const rep = await this.getReputation(agentId);
+
+    return {
+      identity: { agentId, owner, agentWallet },
+      reputation: { count: rep.count, score: rep.score },
     };
   }
 

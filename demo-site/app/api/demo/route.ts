@@ -20,14 +20,76 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    // Read city from request body
+    const { AgentWallet, X402Client } = await import('@vedmohan/agent-wallet');
+
+    // Read request body
     const body = await request.json().catch(() => ({}));
+
+    // ── Handle agent registration (Marketplace tab) ─────────────
+    if (body.action === 'register') {
+      const wallet = await AgentWallet.create({
+        smoothSendApiKey: process.env.SMOOTHSEND_API_KEY!,
+        privateKey: process.env.PRIVATE_KEY || undefined,
+        dailyLimit: process.env.WALLET_DAILY_LIMIT || '100',
+        perTxLimit: process.env.WALLET_PER_TX_LIMIT || '10',
+        network: (process.env.WALLET_NETWORK as any) || 'avalanche-fuji',
+      });
+
+      const agentId = await wallet.registerIdentity(body.name, body.description);
+      const balance = await wallet.getBalance();
+
+      return NextResponse.json({
+        success: true,
+        agentId,
+        txHash: `Registered agent #${agentId}`,
+        wallet: { address: wallet.address, eoa: wallet.eoaAddress, balance },
+      });
+    }
+
+    // ── Handle hire agent (Marketplace tab) ─────────────────────
+    if (body.action === 'hire') {
+      const wallet = await AgentWallet.create({
+        smoothSendApiKey: process.env.SMOOTHSEND_API_KEY!,
+        privateKey: process.env.PRIVATE_KEY || undefined,
+        dailyLimit: process.env.WALLET_DAILY_LIMIT || '100',
+        perTxLimit: process.env.WALLET_PER_TX_LIMIT || '10',
+        network: (process.env.WALLET_NETWORK as any) || 'avalanche-fuji',
+      });
+
+      // Pay $0.01 to the agent's wallet via x402
+      const payment = await wallet.payForService({
+        to: body.agentWallet,
+        amount: '0.01',
+        memo: `Hire agent #${body.agentId} via marketplace`,
+      });
+
+      // Submit reputation feedback for the hired agent (positive)
+      let feedbackTx = '';
+      try {
+        feedbackTx = await wallet.submitFeedback({
+          agentId: body.agentId,
+          value: 85, // positive feedback score
+          tag1: 'x402',
+          tag2: 'hire',
+          feedbackURI: `data:application/json,{"proofOfPayment":{"txHash":"${payment.txHash}"}}`,
+        });
+      } catch { /* feedback is optional */ }
+
+      const balance = await wallet.getBalance();
+
+      return NextResponse.json({
+        success: true,
+        txHash: payment.txHash,
+        feedbackTx,
+        payment,
+        wallet: { address: wallet.address, eoa: wallet.eoaAddress, balance },
+      });
+    }
+
+    // ── Handle weather x402 demo (default) ──────────────────────
     const city = body.city || 'Tokyo';
 
     addStep('Loading Agent Wallet', 'Connecting to SmoothSend bundler...', 'running');
-
-    // 1. Create the wallet (uses SmoothSend SK from env)
-    const { AgentWallet, X402Client } = await import('@vedmohan/agent-wallet');
 
     const wallet = await AgentWallet.create({
       smoothSendApiKey: process.env.SMOOTHSEND_API_KEY!,
@@ -43,7 +105,6 @@ export async function POST(request: NextRequest) {
     const balance = await wallet.getBalance();
     addStep('Checking Balance', `$${parseFloat(balance).toFixed(2)} USDC`, 'done');
 
-    // 2. Determine the base URL (for the merchant endpoint)
     const host = request.headers.get('host') || 'localhost:3000';
     const protocol = host.includes('localhost') ? 'http' : 'https';
     const baseUrl = `${protocol}://${host}`;
@@ -51,23 +112,17 @@ export async function POST(request: NextRequest) {
 
     addStep('x402 Request', `→ ${merchantUrl}`, 'running');
 
-    // 3. Run the x402 flow
     const x402 = new X402Client({ wallet });
 
-    // First make a direct request to show the 402
-    const rawResponse = await x402['rawRequest']({
-      url: merchantUrl,
-      method: 'GET',
-    });
+    const rawResponse = await x402['rawRequest']({ url: merchantUrl, method: 'GET' });
 
     if (rawResponse.status !== 402) {
       throw new Error(`Expected 402, got ${rawResponse.status}`);
     }
 
     addStep('402 Payment Required', `$${rawResponse.headers['x-payment-price']} USDC required`, 'done');
-    addStep('Processing Payment', `Sending via SmoothSend user-pays-erc20 bundler...`, 'running');
+    addStep('Processing Payment', 'Sending via SmoothSend user-pays-erc20 bundler...', 'running');
 
-    // 4. Pay and retry via X402Client
     const result = await x402.request(merchantUrl);
 
     steps[steps.length - 1].status = 'done';
@@ -78,7 +133,6 @@ export async function POST(request: NextRequest) {
 
     addStep('Data Received', `${result.data.city}: ${result.data.temperature}°C, ${result.data.condition}`, 'done');
 
-    // 5. Budget status
     const budget = await wallet.getBudgetStatus();
 
     return NextResponse.json({
@@ -87,12 +141,7 @@ export async function POST(request: NextRequest) {
       steps,
       result: { weather: result.data },
       payment: result.payment,
-      wallet: {
-        address: wallet.address,
-        eoa: wallet.eoaAddress,
-        balance,
-        budget,
-      },
+      wallet: { address: wallet.address, eoa: wallet.eoaAddress, balance, budget },
       network: process.env.WALLET_NETWORK || 'avalanche-fuji',
     });
   } catch (err: any) {

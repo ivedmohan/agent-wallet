@@ -1,6 +1,6 @@
-# 🤖 x402 + Agent Wallet
+# 🤖 Agent Wallet — x402 + ERC-8004
 
-**AI agents pay for APIs in USDC on Avalanche — including gas. No AVAX needed. No merchant subsidies.**
+**AI agents pay for APIs in USDC on Avalanche — including gas. No AVAX needed. Plus on-chain agent identity and reputation via ERC-8004.**
 
 Built on [SmoothSend](https://smoothsend.xyz) ERC-4337 infrastructure (VerifyingPaymaster + bundler on Avalanche C-Chain).
 
@@ -8,70 +8,110 @@ Built on [SmoothSend](https://smoothsend.xyz) ERC-4337 infrastructure (Verifying
 
 ## ✨ Live Demo
 
-**[x402avax.vercel.app](https://x402avax.vercel.app/)** — try the x402 flow live:
+**[x402avax.vercel.app](https://x402avax.vercel.app/)** — three tabs:
 
-1. Toggle **x402 OFF** → see the raw `402 Payment Required` error with price
-2. Toggle **x402 ON** → wallet auto-pays in USDC and returns the data
-3. Watch every step in the terminal: wallet creation → 402 → payment → data
-
-Pick any city (Tokyo, London, Dubai, NYC, Singapore) — each request costs `$0.02 USDC` total ($0.01 API + $0.01 gas min floor).
+| Tab | What it does |
+|-----|-------------|
+| **Live Demo** | Toggle x402 OFF → see raw `402 Payment Required`. Toggle ON → auto-pays in USDC, get weather data. City picker (Tokyo, London, Dubai, NYC, Singapore). `$0.02/tx` |
+| **Marketplace** | ERC-8004 agent registry. Register your agent, browse agents by reputation score, hire via x402 payment + on-chain feedback |
+| **Quick Start** | Copy-paste code snippets |
 
 ---
 
-## Why Agent Wallet over plain x402?
+## What's New in v2.0.0 — ERC-8004 Agent Registry
 
-Base's x402 protocol makes **merchants pay gas in ETH**. Agent Wallet flips this — the agent (AI) pays everything in **USDC on Avalanche**, so the merchant keeps **100%** of revenue.
+This release adds **on-chain agent identity and reputation** via [ERC-8004](https://eips.ethereum.org/EIPS/eip-8004): the Trustless Agents standard.
+
+Two contracts deployed on **Avalanche Fuji**:
+
+| Contract | Address | Role |
+|----------|---------|------|
+| **IdentityRegistry** | `0x3F5Ee79771C2628D3941Bc015d306C194DA2E425` | ERC-721 agent identities with EIP-712 wallet verification |
+| **ReputationRegistry** | `0x351487d9E592B0D6682b0027a2eA099ab2652B10` | On-chain feedback scores with proof-of-payment |
+
+Source: `agent-wallet/contracts/contracts/`
+
+```typescript
+// New in v2.0.0 — ERC-8004 identity + reputation
+const wallet = await AgentWallet.create({ ... });
+
+// Register an agent identity (mints an ERC-721, gas sponsored)
+const agentId = await wallet.registerIdentity(
+  'Weather Bot',
+  'Gets weather data via x402 on Avalanche'
+);
+// → Agent ID: 1 — on-chain identity created
+
+// Get reputation score for any agent
+const rep = await wallet.getReputation(agentId);
+// → { count: 5, summaryValue: 42500, valueDecimals: 2, score: 85 }
+
+// Submit feedback after a transaction
+const feedbackTx = await wallet.submitFeedback({
+  agentId: 1,
+  value: 85,
+  tag1: 'x402',
+  feedbackURI: 'data:...,{"proofOfPayment":{"txHash":"0x..."}}',
+});
+
+// Get full marketplace listing
+const listing = await wallet.getAgentListing(agentId);
+// → { identity: { agentId, owner, agentWallet }, reputation: { count, score } }
+```
+
+### ERC-8004 Flow
+
+```
+AgentWallet.create()
+  → registerIdentity(name, desc)    // Mints ERC-721 on IdentityRegistry
+  → x402.request(url)               // Pays API in USDC
+  → submitFeedback(agentId, score)  // Posts feedback to ReputationRegistry
+  → getReputation(agentId)          // Reads on-chain reputation score
+```
+
+The IdentityRegistry uses **EIP-712 signatures** to verify the agent's payment wallet. The ReputationRegistry stores feedback as `(value, valueDecimals, tag1, tag2)` with optional `proofOfPayment` URIs. Both are **per-chain singletons** — one shared registry that all agents register to, building a networked reputation layer.
+
+---
+
+## Monorepo Structure
+
+```
+agent-wallet/
+├── src/                     # SDK source (AgentWallet, X402Client, types)
+├── contracts/               # ERC-8004 Solidity contracts
+│   ├── contracts/
+│   │   ├── IdentityRegistry.sol    # ERC-721 agent identity
+│   │   └── ReputationRegistry.sol  # On-chain feedback
+│   ├── scripts/deploy.ts           # Fuji deploy script
+│   ├── hardhat.config.ts
+│   └── DEPLOYED.md                 # Contract addresses
+├── demo-site/               # Next.js demo app (Vercel)
+│   └── app/
+│       ├── page.tsx                 # Main UI (3 tabs)
+│       └── api/
+│           ├── demo/route.ts        # x402 flow + agent registration
+│           ├── marketplace/route.ts # Agent listing API
+│           └── merchant/route.ts    # Merchant endpoint (402)
+├── dist/                    # Built SDK
+└── package.json             # @vedmohan/agent-wallet
+```
+
+---
+
+## Why Agent Wallet?
+
+Base's x402 protocol makes **merchants pay gas in ETH**. Agent Wallet flips this — the agent pays everything in **USDC on Avalanche**:
 
 | | Plain x402 | Agent Wallet |
 |---|---|---|
 | Network | Base (ETH gas) | **Avalanche C-Chain** |
-| Merchant receives | ~96% (gas deducted) | **100%** |
+| Merchant receives | ~96% | **100%** |
 | Who pays gas | Merchant in ETH | **Agent in USDC** |
-| Gas token | ETH | **USDC (via paymaster)** |
+| Gas token | ETH | **USDC** |
 | Agent needs ETH? | Yes | **No — just USDC** |
-| Setup | Deploy paymaster + KYC | **1 API key, 30 seconds** |
-| Paymaster mode | — | `user-pays-erc20` |
-| Smart Account | — | ERC-4337 `SimpleAccount` |
-
----
-
-## How It Works
-
-```
-┌─────────────┐     ┌──────────────┐     ┌────────────────┐     ┌────────────────┐
-│             │     │              │     │                │     │                │
-│  AI Agent   │ ──→ │  x402 API    │ ←── │  402 Payment   │ ──→ │  SmoothSend    │
-│  Wallet     │     │  Server      │     │  Required      │     │  Bundler       │
-│             │     │              │     │  $0.01 USDC    │     │  + Paymaster   │
-│  $20 USDC   │     │              │     │                │     │  (Avalanche)   │
-│  Balance    │     │              │     │                │     │                │
-└─────────────┘     └──────────────┘     └────────────────┘     └────────────────┘
-       │                    │                     │                      │
-       │                    │                     │   UserOp via         │
-       │  retry with        │                     │   ERC-4337           │
-       │  X-Payment-Tx      │                     │   EntryPoint v0.7    │
-       └────────────────────┘                     │                      │
-                                                  │  USDC deducted:      │
-                                                  │  • $0.01 → merchant  │
-                                                  │  • $0.01 → gas (min) │
-                                                  └──────────────────────┘
-```
-
-### Flow
-
-1. Agent sends `GET /weather?city=Tokyo`
-2. Server responds **402 Payment Required** with:
-   - `x-payment-price: 0.01`
-   - `x-payment-recipient: 0x...`
-   - `x-payment-token: USDC`
-3. `X402Client` detects 402 → calls `wallet.payForService()`
-4. Wallet submits a **UserOp** to SmoothSend's bundler (user-pays-erc20 mode)
-5. Paymaster splits the cost:
-   - **$0.01 USDC** → merchant (API fee)
-   - **$0.01 USDC** → treasury (gas minimum floor)
-6. Agent retries with `X-Payment-Tx: 0x...` → gets the data 🎉
-
-**The agent never touches AVAX. The merchant never pays gas.**
+| Setup | Deploy paymaster + KYC | **1 API key, 30s** |
+| Identity | None | **ERC-8004 on-chain** |
+| Reputation | None | **On-chain feedback** |
 
 ---
 
@@ -84,18 +124,22 @@ npm install @vedmohan/agent-wallet
 ```typescript
 import { AgentWallet, X402Client } from '@vedmohan/agent-wallet';
 
-// 1. Create a wallet (smart account is auto-deployed on first tx)
+// Create wallet (smart account auto-deployed on first tx)
 const wallet = await AgentWallet.create({
-  smoothSendApiKey: 'sk_nogas_...',      // from dashboard.smoothsend.xyz
-  dailyLimit: '100',                       // max $100 USDC/day
-  perTxLimit: '10',                        // max $10 USDC/tx
-  network: 'avalanche-fuji',               // or 'avalanche-mainnet'
+  smoothSendApiKey: 'sk_nogas_...',      // dashboard.smoothsend.xyz
+  dailyLimit: '100',
+  perTxLimit: '10',
+  network: 'avalanche-fuji',
 });
 
 console.log(`Smart Account: ${wallet.address}`);
 console.log(`Balance: $${await wallet.getBalance()} USDC`);
 
-// 2. Start making x402 calls — auto-pays when a 402 is received
+// Optional: register an ERC-8004 identity
+const agentId = await wallet.registerIdentity('My Bot', 'AI agent demo');
+console.log(`Registered as Agent #${agentId}`);
+
+// x402 calls — auto-pays when 402 is received
 const x402 = new X402Client({ wallet });
 
 const weather = await x402.request(
@@ -104,28 +148,7 @@ const weather = await x402.request(
 
 console.log(`🌤️  ${weather.data.temperature}°C, ${weather.data.condition}`);
 // 💸 Auto-paid $0.02 USDC — all in USDC
-//    API: $0.01  ·  Gas: $0.01 (min. floor)
 ```
-
----
-
-## Real Transaction on Avalanche Fuji
-
-```
-🔑 EOA Address:     0x6e5ce646fD3D59e8981E24273087636b8F0F1322
-🏦 Smart Account:   0xB8b741911c1Fa06591D0EE04CC239891beb02419
-💳 USDC Token:      0x5425890298aed601595a70AB815c96711a31Bc65 (Fuji USDC)
-
-🌐 GET /api/merchant?type=weather&city=Tokyo
-⚡ 402 Payment Required — $0.01 USDC
-💸 Processing payment via SmoothSend...
-✅ Payment succeeded!
-   TxHash: 0x7bdc0145ea5e1518cc70ea8ceb89c292bdb75c4d578c8a92f7445865a953c392
-💰 Total:  $0.02 USDC  │  API: $0.01  │  Gas: $0.01 (min. floor)
-🌤️  Tokyo: 25°C, sunny
-```
-
-[View on Snowtrace →](https://testnet.snowtrace.io/tx/0x7bdc0145ea5e1518cc70ea8ceb89c292bdb75c4d578c8a92f7445865a953c392)
 
 ---
 
@@ -134,129 +157,95 @@ console.log(`🌤️  ${weather.data.temperature}°C, ${weather.data.condition}`
 ### AgentWallet
 
 ```typescript
-const wallet = await AgentWallet.create(config: AgentWalletConfig)
+const wallet = await AgentWallet.create(config)
 ```
 
-| Field | Required | Default | Description |
-|-------|----------|---------|-------------|
+| Config Field | Required | Default | Description |
+|---|---|---|---|
 | `smoothSendApiKey` | ✅ | — | From [dashboard.smoothsend.xyz](https://dashboard.smoothsend.xyz) |
 | `network` | ✅ | — | `avalanche-fuji` or `avalanche-mainnet` |
-| `dailyLimit` | ✅ | — | Max USDC spend per day (e.g. `'100'`) |
-| `perTxLimit` | ✅ | — | Max USDC per transaction (e.g. `'10'`) |
-| `privateKey` | ❌ | Random EOA | Reuse a wallet across restarts. Export via `wallet.exportPrivateKey()` |
-| `rpcUrl` | ❌ | Default RPC | Custom Avalanche RPC endpoint |
-| `allowedMerchants` | ❌ | All allowed | Restrict which addresses can be paid |
+| `dailyLimit` | ✅ | — | Max USDC/day (e.g. `'100'`) |
+| `perTxLimit` | ✅ | — | Max USDC/tx (e.g. `'10'`) |
+| `privateKey` | ❌ | Random EOA | Reuse wallet across restarts |
+| `identityRegistryAddress` | ❌ | Fuji deployment | Custom IdentityRegistry address |
+| `reputationRegistryAddress` | ❌ | Fuji deployment | Custom ReputationRegistry address |
 
 **Methods:**
 
 | Method | Returns | Description |
 |--------|---------|-------------|
 | `wallet.address` | `string` | Smart account address (ERC-4337) |
-| `wallet.eoaAddress` | `string` | EOA address (owner of smart account) |
-| `getBalance()` | `string` | USDC balance of smart account |
-| `payForService(req)` | `PaymentResult` | Pay a merchant in USDC (auto-approves paymaster if needed) |
-| `getBudgetStatus()` | `BudgetStatus` | `{ dailyLimit, spentToday, remaining, txCount }` |
-| `exportPrivateKey()` | `string` | Export EOA private key (for persistence) |
-
-**`payForService` auto-handles:**
-- ✅ Paymaster approval (first call approves 1000 USDC, subsequent calls skip)
-- ✅ Gas cost deduction in USDC (paymaster minimum fee floor applied)
-- ✅ Budget checks (daily & per-tx limits)
-- ✅ Balance checks (insufficient balance → clear error with deposit address)
+| `wallet.eoaAddress` | `string` | EOA owner address |
+| `wallet.agentId` | `number \| null` | ERC-8004 agent ID (after `registerIdentity`) |
+| `getBalance()` | `string` | USDC balance |
+| `payForService(req)` | `PaymentResult` | Pay merchant in USDC (auto-approves paymaster) |
+| `getBudgetStatus()` | `BudgetStatus` | Daily + per-tx budget info |
+| `exportPrivateKey()` | `string` | Export EOA private key |
+| `registerIdentity(name, desc)` | `number` | **v2.0** Mint ERC-8004 identity, returns agentId |
+| `getReputation(agentId)` | `AgentReputation` | **v2.0** Read on-chain reputation score (0-100) |
+| `submitFeedback(input)` | `string` | **v2.0** Submit feedback for an agent (tx hash) |
+| `getAgentListing(agentId)` | `object` | **v2.0** Full identity + reputation listing |
 
 ### X402Client
 
 ```typescript
 const x402 = new X402Client({ wallet });
 
-// Single request
 const result = await x402.request(url | AxiosRequestConfig);
+// → { data, status, paid, payment? }
 
-// Batch requests
 const results = await x402.batch([url1, url2, ...]);
 ```
 
-Returns `{ data, status, paid, payment? }`:
-- `paid: false` → no payment needed (200/redirect)
-- `paid: true` → 402 was paid, `payment` contains `{ txHash, totalCost, gasCost, apiCost }`
-
-### McpClient
-
-```typescript
-const mcp = new McpClient();
-
-// Look up a real transaction
-const tx = await mcp.lookupTransaction(txHash, 'fuji');
-
-// Get current fee estimates
-const fees = await mcp.getTransactionFees('fuji');
-```
+- `paid: false` → no payment needed
+- `paid: true` → 402 was paid, `payment: { txHash, totalCost, gasCost, apiCost }`
 
 ---
 
 ## Architecture
 
-| Component | Description |
-|-----------|-------------|
-| **Smart Account** | ERC-4337 `SimpleAccount` — deployed by SmoothSend's factory on first UserOp |
-| **Paymaster** | `VerifyingPaymaster` (Coinbase fork on Avalanche) — converts gas to USDC via `user-pays-erc20` mode |
-| **Bundler** | SmoothSend's bundler — submits UserOps to EntryPoint v0.7 |
-| **EntryPoint** | Canonical `0x0000000071727De22E5E9d8BAf0edAc6f37da032` |
-| **Network** | Avalanche Fuji (testnet) / Avalanche C-Chain (mainnet) |
-| **Gas Token** | AVAX (paymaster covers it, reimbursed in USDC from smart account) |
-| **SDK** | `AgentWallet` (wallet mgmt) + `X402Client` (HTTP + auto-pay) + `McpClient` (on-chain verification) |
-
-### Smart Account Address Prediction
-
-The smart account address is deterministic — computed from `(factory, owner, salt=0)`. Send USDC to this address before making x402 calls.
-
-You can get it by creating a wallet (even without a funded private key, it'll generate one):
-
-```typescript
-const wallet = await AgentWallet.create({
-  smoothSendApiKey: 'sk_nogas_...',
-  dailyLimit: '100',
-  perTxLimit: '10',
-  network: 'avalanche-fuji',
-});
-console.log(wallet.address); // → send USDC here
 ```
-
----
-
-## Demo Site
-
-The demo site at **[agent-wallet.vercel.app](https://agent-wallet.vercel.app)** is a Next.js app that:
-
-- **x402 OFF**: Makes a raw API request → shows the 402 Payment Required error
-- **x402 ON**: Runs the full auto-pay flow: wallet create → balance check → 402 → payment → data
-- **City selector**: 5 cities with live weather data
-- **Terminal log**: Step-by-step streaming output
-- **Cost breakdown**: API fee + gas cost + Snowtrace link
-
-### Running locally
-
-```bash
-cd agent-wallet/demo-site
-cp .env.example .env   # add your SmoothSend API key + funded EOA private key
-npm install
-npm run dev            # localhost:3000
+┌─────────────────────────────────────────────────────┐
+│                   Agent Wallet SDK                  │
+├─────────────┬──────────────┬────────────────────────┤
+│ AgentWallet │ X402Client   │ McpClient              │
+│ (wallet)    │ (auto-pay)   │ (tx lookup)            │
+├─────────────┴──────┬───────┴────────────────────────┤
+│                    │                                │
+│     SmoothSend Bundler (ERC-4337)                   │
+│     VerifyingPaymaster (user-pays-erc20)            │
+│     EntryPoint v0.7                                 │
+├─────────────────────────────────────────────────────┤
+│ IdentityRegistry (ERC-8004)    ReputationRegistry   │
+│ • register(name, desc)         • giveFeedback()     │
+│ • setAgentWallet(EIP-712)      • getSummary()       │
+│ • getAgentWallet()             • revokeFeedback()   │
+└─────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## Development
 
+### Running locally
+
 ```bash
-git clone https://github.com/vedmohan/agent-wallet.git
+# Terminal 1: build SDK in watch mode
 cd agent-wallet
+npm run dev
 
-npm install
-npm run build
+# Terminal 2: demo site with local SDK
+cd agent-wallet/demo-site
+npm run dev:local           # uses local build (no npm publish needed)
+# or: npm run dev            # uses published npm package
+```
 
-# Run the e2e test
-cp .env.example .env   # add your keys
-npm run test:e2e
+### Deploying contracts
+
+```bash
+cd agent-wallet/contracts
+cp .env.example .env        # add DEPLOYER_PRIVATE_KEY
+npm run deploy:fuji
 ```
 
 ---

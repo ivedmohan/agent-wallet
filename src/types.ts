@@ -6,6 +6,10 @@ export interface AgentWalletConfig {
   network: 'avalanche-fuji' | 'avalanche-mainnet';
   privateKey?: string;
   rpcUrl?: string;
+  /** ERC-8004 IdentityRegistry contract address (default: Fuji deployment) */
+  identityRegistryAddress?: string;
+  /** ERC-8004 ReputationRegistry contract address (default: Fuji deployment) */
+  reputationRegistryAddress?: string;
 }
 
 export interface PaymentRequest {
@@ -22,6 +26,8 @@ export interface PaymentResult {
   apiCost: string;
   remainingBudget: string;
   receipt?: any;
+  /** Optional ERC-8004 feedback tx hash if post-payment feedback was submitted */
+  feedbackTxHash?: string;
 }
 
 export interface BudgetStatus {
@@ -56,4 +62,44 @@ export interface X402Result {
   status: number;
   payment?: PaymentResult;
   paid: boolean;
+}
+
+// ── ERC-8004 Types ────────────────────────────────────────────
+
+/** An agent's on-chain identity from the IdentityRegistry */
+export interface AgentIdentity {
+  agentId: number;
+  agentURI: string;
+  owner: string;
+  agentWallet: string;
+}
+
+/** Reputation summary for an agent from the ReputationRegistry */
+export interface AgentReputation {
+  count: number;
+  summaryValue: number;
+  valueDecimals: number;
+  /** Scored 0-100 for display */
+  score: number;
+}
+
+/** Input for submitting reputation feedback */
+export interface FeedbackInput {
+  agentId: number;
+  value: number;
+  tag1?: string;
+  tag2?: string;
+  /** URI to proof-of-payment file */
+  feedbackURI?: string;
+}
+
+/** An agent's marketplace listing */
+export interface AgentListing {
+  agentId: number;
+  name: string;
+  description: string;
+  owner: string;
+  agentWallet: string;
+  services: Array<{ name: string; endpoint: string }>;
+  reputation: AgentReputation;
 }

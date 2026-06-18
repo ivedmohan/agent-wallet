@@ -106,7 +106,7 @@ function Toggle({ enabled, onChange, label }: { enabled: boolean; onChange: (v: 
 // ── Main Component ──────────────────────────────────────────────
 
 export default function DemoPage() {
-  const [activeSection, setActiveSection] = useState<'demo' | 'code'>('demo');
+  const [activeSection, setActiveSection] = useState<'demo' | 'code' | 'marketplace'>('demo');
   const [selectedCity, setSelectedCity] = useState('Tokyo');
   const [x402Enabled, setX402Enabled] = useState(false);
   const [running, setRunning] = useState(false);
@@ -116,7 +116,47 @@ export default function DemoPage() {
   const [logs, setLogs] = useState<Array<{ text: string; type: 'info' | 'success' | 'error' }>>([]);
   const logEndRef = useRef<HTMLDivElement>(null);
 
+  // Marketplace state
+  const [agents, setAgents] = useState<any[]>([]);
+  const [selectedAgent, setSelectedAgent] = useState<any | null>(null);
+  const [registerName, setRegisterName] = useState('');
+  const [registerDesc, setRegisterDesc] = useState('');
+  const [registerResult, setRegisterResult] = useState<string | null>(null);
+  const [marketplaceBusy, setMarketplaceBusy] = useState(false);
+
   useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [logs]);
+  useEffect(() => { if (activeSection === 'marketplace') fetchAgents(); }, [activeSection]);
+
+  const fetchAgents = async () => {
+    try {
+      const res = await fetch('/api/marketplace');
+      const data = await res.json();
+      if (data.success) setAgents(data.agents);
+    } catch { /* ignore */ }
+  };
+
+  const registerAgent = async () => {
+    if (!registerName.trim()) return;
+    setMarketplaceBusy(true);
+    setRegisterResult(null);
+    try {
+      const res = await fetch('/api/demo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'register', name: registerName.trim(), description: registerDesc.trim() || `${registerName.trim()} — AI agent` }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setRegisterResult(`✅ Registered! Agent ID: ${data.agentId} · Tx: ${data.txHash?.slice(0, 18)}...`);
+        setRegisterName(''); setRegisterDesc('');
+        setTimeout(fetchAgents, 3000);
+      } else {
+        setRegisterResult(`❌ ${data.error || 'Registration failed'}`);
+      }
+    } catch (err: any) {
+      setRegisterResult(`❌ ${err?.message || 'Error'}`);
+    } finally { setMarketplaceBusy(false); }
+  };
 
   const addLog = (text: string, type: 'info' | 'success' | 'error' = 'info') => {
     setLogs((prev) => [...prev, { text, type }]);
@@ -269,6 +309,12 @@ export default function DemoPage() {
               activeSection === 'code' ? 'border-violet-400 text-white' : 'border-transparent text-white/30 hover:text-white/50'
             }`}>
             Quick Start
+          </button>
+          <button onClick={() => setActiveSection('marketplace')}
+            className={`px-5 py-3 text-sm font-medium transition-colors border-b-2 -mb-[1px] ${
+              activeSection === 'marketplace' ? 'border-violet-400 text-white' : 'border-transparent text-white/30 hover:text-white/50'
+            }`}>
+            Marketplace
           </button>
         </div>
 
@@ -471,6 +517,160 @@ export default function DemoPage() {
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {activeSection === 'marketplace' && (
+          <div className="space-y-6">
+            {/* Register Agent Card */}
+            <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-8 h-8 rounded-lg bg-violet-500/10 flex items-center justify-center">
+                  <svg className="w-4 h-4 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-white">Register Your Agent</h3>
+                  <p className="text-xs text-white/40">Create an ERC-8004 identity on-chain</p>
+                </div>
+              </div>
+              <div className="flex gap-3 mb-3">
+                <input
+                  value={registerName} onChange={(e) => setRegisterName(e.target.value)}
+                  placeholder="Agent name"
+                  className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-violet-500/50"
+                />
+                <input
+                  value={registerDesc} onChange={(e) => setRegisterDesc(e.target.value)}
+                  placeholder="Description (optional)"
+                  className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-violet-500/50"
+                />
+                <button
+                  onClick={registerAgent} disabled={marketplaceBusy || !registerName.trim()}
+                  className="px-4 py-2 bg-violet-500 hover:bg-violet-400 disabled:bg-white/5 disabled:text-white/30 text-white text-sm font-medium rounded-lg transition-all whitespace-nowrap"
+                >
+                  {marketplaceBusy ? 'Registering...' : 'Register'}
+                </button>
+              </div>
+              {registerResult && (
+                <div className={`text-xs font-mono mt-2 ${registerResult.startsWith('✅') ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {registerResult}
+                </div>
+              )}
+            </div>
+
+            {/* Agent Cards Grid */}
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {agents.length === 0 && (
+                <div className="md:col-span-2 lg:col-span-3 text-center py-12 text-white/20">
+                  No agents found in the registry. Register one above!
+                </div>
+              )}
+              {agents.map((agent: any) => (
+                <button
+                  key={agent.agentId}
+                  onClick={() => setSelectedAgent(selectedAgent?.agentId === agent.agentId ? null : agent)}
+                  className={`text-left bg-white/[0.02] border rounded-xl p-5 transition-all duration-200 hover:bg-white/[0.04] ${
+                    selectedAgent?.agentId === agent.agentId ? 'border-violet-500/40' : 'border-white/[0.06]'
+                  }`}
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <div className="text-sm font-semibold text-white">{agent.name}</div>
+                      <div className="text-[10px] font-mono text-white/20 mt-0.5">ID #{agent.agentId}</div>
+                    </div>
+                    <div className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono ${
+                      agent.reputation.score >= 50 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/5 text-white/40'
+                    }`}>
+                      <span>{agent.reputation.count > 0 ? `${agent.reputation.score}/100` : '—'}</span>
+                    </div>
+                  </div>
+                  {selectedAgent?.agentId === agent.agentId && (
+                    <div className="mt-3 pt-3 border-t border-white/5 space-y-2 text-xs animate-fade-in">
+                      <div className="flex justify-between text-white/30">
+                        <span>Owner</span>
+                        <span className="font-mono text-white/50">{agent.owner?.slice(0, 10)}...{agent.owner?.slice(-4)}</span>
+                      </div>
+                      <div className="flex justify-between text-white/30">
+                        <span>Wallet</span>
+                        <span className="font-mono text-white/50">{agent.agentWallet?.slice(0, 10)}...{agent.agentWallet?.slice(-4)}</span>
+                      </div>
+                      <div className="flex justify-between text-white/30">
+                        <span>Reputation</span>
+                        <span className="font-mono text-white/50">{agent.reputation.count} feedbacks · {agent.reputation.score}/100</span>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          setMarketplaceBusy(true);
+                          setRegisterResult(null);
+                          try {
+                            const res = await fetch('/api/demo', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ action: 'hire', agentId: agent.agentId, agentWallet: agent.agentWallet }),
+                            });
+                            const data = await res.json();
+                            if (data.success) {
+                              setRegisterResult(`✅ Hired! Tx: ${data.txHash?.slice(0, 18)}... · Feedback submitted`);
+                              setTimeout(fetchAgents, 2000);
+                            } else {
+                              setRegisterResult(`❌ ${data.error || 'Hire failed'}`);
+                            }
+                          } catch (err: any) {
+                            setRegisterResult(`❌ ${err?.message || 'Error'}`);
+                          } finally { setMarketplaceBusy(false); }
+                        }}
+                        disabled={marketplaceBusy}
+                        className="w-full mt-2 py-2 bg-emerald-500 hover:bg-emerald-400 disabled:bg-white/5 disabled:text-white/30 text-white text-xs font-medium rounded-lg transition-all"
+                      >
+                        {marketplaceBusy ? 'Processing...' : 'Hire Agent (x402)'}
+                      </button>
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            {/* Agent Detail (expanded) */}
+            {selectedAgent && (
+              <div className="bg-emerald-500/[0.02] border border-emerald-500/20 rounded-xl p-5 animate-fade-in">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center text-lg">🤖</div>
+                  <div>
+                    <div className="text-base font-semibold text-white">{selectedAgent.name}</div>
+                    <div className="text-xs text-white/40">Agent ID #{selectedAgent.agentId} · ERC-8004</div>
+                  </div>
+                </div>
+                <p className="text-sm text-white/50 mb-4">
+                  Registered on <span className="text-white/70">Avalanche Fuji</span> with x402 payment support.
+                  Reputation is tracked via the on-chain <span className="text-white/70">ReputationRegistry</span>.
+                </p>
+                <div className="grid grid-cols-3 gap-3 text-center mb-4">
+                  <div className="bg-white/5 rounded-lg p-3">
+                    <div className="text-lg font-bold text-emerald-400">{selectedAgent.reputation.score}</div>
+                    <div className="text-[10px] text-white/30">Reputation Score</div>
+                  </div>
+                  <div className="bg-white/5 rounded-lg p-3">
+                    <div className="text-lg font-bold text-white">{selectedAgent.reputation.count}</div>
+                    <div className="text-[10px] text-white/30">Feedbacks</div>
+                  </div>
+                  <div className="bg-white/5 rounded-lg p-3">
+                    <div className="text-lg font-bold text-cyan-400">x402</div>
+                    <div className="text-[10px] text-white/30">Payment Protocol</div>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <a
+                    href={`https://testnet.snowtrace.io/address/${selectedAgent.agentWallet}`}
+                    target="_blank" rel="noopener noreferrer"
+                    className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 text-white/60 hover:text-white text-xs font-medium rounded-lg text-center transition-all"
+                  >
+                    View on Snowtrace
+                  </a>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
