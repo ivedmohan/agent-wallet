@@ -1,7 +1,7 @@
-import { Wallet, type HDNodeWallet } from 'ethers';
+import { Wallet, type HDNodeWallet, id } from 'ethers';
 import {
   createPublicClient, createWalletClient, http,
-  encodeFunctionData, parseUnits, type Address,
+  encodeFunctionData, parseUnits, type Address, type Log,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { avalancheFuji, avalanche } from 'viem/chains';
@@ -332,26 +332,40 @@ export class AgentWallet {
       throw new Error(`[AgentWallet] Registration transaction failed. Ensure your smart account has USDC balance.`);
     }
 
-    // The agentId is emitted in the Registered event — we parse it from logs
-    const agentId = this._parseAgentIdFromLogs(result.receipt?.logs ?? []);
-    if (!agentId) throw new Error('[AgentWallet] Could not determine agentId from registration receipt');
+    // Check UserOp receipt success flag for a better error on revert
+    if (result.receipt && !result.receipt.success) {
+      throw new Error(`[AgentWallet] Registration UserOperation reverted. Reason: ${result.receipt.reason ?? 'unknown'}. Ensure your smart account has USDC balance.`);
+    }
+
+    // Fetch the actual TransactionReceipt from the chain — this is more reliable
+    // than parsing UserOperationReceipt logs, which can have format inconsistencies.
+    const network = NETWORK_CONFIG[this.config.network];
+    const publicClient = createPublicClient({ chain: network.chain, transport: http(this.rpcUrl) });
+    const txHash = result.transactionHash as `0x${string}`;
+    const txReceipt = await publicClient.getTransactionReceipt({ hash: txHash });
+
+    const agentId = this._parseAgentIdFromLogs(txReceipt.logs);
+    if (!agentId) throw new Error('[AgentWallet] Could not determine agentId from transaction receipt logs');
     this._agentId = agentId;
-    const txHash = result.transactionHash ?? result.userOpHash;
     console.log(`   ✅ Registered! Agent ID: ${agentId} — Tx: ${txHash}`);
     return agentId;
   }
 
-  /** Parse agentId from IdentityRegistry.Registered event logs */
-  private _parseAgentIdFromLogs(logs: any[]): number | null {
+  /** Parse agentId from IdentityRegistry.Registered event logs.
+   *  Accepts viem Log[] (from TransactionReceipt) for reliable format.
+   *  Uses ethers to compute the event topic at runtime.
+   */
+  private _parseAgentIdFromLogs(logs: Log[]): number | null {
+    const regTopic = id('Registered(uint256,string,address)').toLowerCase();
+
     for (const log of logs) {
-      // IdentityRegistry emits Registered(uint256 indexed agentId, string agentURI, address indexed owner)
-      // Topic[0] = keccak256("Registered(uint256,string,address)")
-      const topic0 = log.topics?.[0];
-      if (!topic0 || typeof topic0 !== 'string') continue;
-      const regTopic = '0x47838e11de867dab89ceb6526646a4c747c0df7ff172aae9b43df6f5cd2fee4c';
-      if (topic0.toLowerCase() === regTopic) {
-        const data = log.topics?.[1];
-        if (data) return Number(BigInt(data));
+      if (!log.topics?.length) continue;
+      const topic0 = log.topics[0]?.toLowerCase();
+      if (!topic0) continue;
+      if (topic0 === regTopic) {
+        // agentId is the first indexed parameter → topics[1]
+        const agentIdData = log.topics[1];
+        if (agentIdData) return Number(BigInt(agentIdData));
       }
     }
     return null;
