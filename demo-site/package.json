@@ -5,6 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
+    "dev:local": "npm run link:wallet 2>/dev/null; npm run rebuild:wallet && next dev",
+    "link:wallet": "npm link @vedmohan/agent-wallet",
+    "unlink:wallet": "npm unlink --no-save @vedmohan/agent-wallet && npm install",
+    "rebuild:wallet": "cd ../ && npm run build 2>&1 | tail -3",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
@@ -13,7 +17,7 @@
     "next": "^15.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "@vedmohan/agent-wallet": "^0.1.0"
+    "@vedmohan/agent-wallet": "^1.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
