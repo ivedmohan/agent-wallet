@@ -4,13 +4,13 @@ import './globals.css';
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
-  title: 'Agent Wallet — x402 Payment Demo',
+  title: 'Private Agent Wallet — x402 Demo',
   description:
-    'AI agents pay for APIs in USDC — including gas. No AVAX needed. Built on SmoothSend ERC-4337 paymaster infrastructure.',
+    'AI agents pay for APIs in USDC — including gas — while spend details stay masked in the UI. Built on SmoothSend ERC-4337 paymaster infrastructure.',
   openGraph: {
-    title: 'Agent Wallet — x402 Payment Demo',
+    title: 'Private Agent Wallet — x402 Demo',
     description:
-      'AI agents pay for APIs in USDC — including gas. No AVAX needed. Built on SmoothSend.',
+      'AI agents pay for APIs in USDC — including gas — while spend details stay masked in the UI. Built on SmoothSend.',
     type: 'website',
   },
 };

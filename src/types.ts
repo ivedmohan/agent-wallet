@@ -6,6 +6,10 @@ export interface AgentWalletConfig {
   network: 'avalanche-fuji' | 'avalanche-mainnet';
   privateKey?: string;
   rpcUrl?: string;
+  /** When true, payment outputs are redacted by default for privacy-first demos */
+  privacyMode?: boolean;
+  /** Optional registry for private payment envelopes */
+  privacyRegistryAddress?: string;
   /** ERC-8004 IdentityRegistry contract address (default: Fuji deployment) */
   identityRegistryAddress?: string;
   /** ERC-8004 ReputationRegistry contract address (default: Fuji deployment) */
@@ -17,6 +21,19 @@ export interface PaymentRequest {
   amount: string;
   memo?: string;
   token?: string;
+  /** Request a redacted payment summary for privacy-first demos */
+  private?: boolean;
+}
+
+export interface PaymentDisplay {
+  private: boolean;
+  amount: string;
+  gasCost: string;
+  totalCost: string;
+  apiCost: string;
+  txHash: string;
+  recipient: string;
+  memo?: string;
 }
 
 export interface PaymentResult {
@@ -28,6 +45,9 @@ export interface PaymentResult {
   apiCost: string;
   remainingBudget: string;
   receipt?: any;
+  display?: PaymentDisplay;
+  privacyEnvelopeId?: string;
+  privacyPayloadHash?: string;
   /** Optional ERC-8004 feedback tx hash if post-payment feedback was submitted */
   feedbackTxHash?: string;
 }

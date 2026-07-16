@@ -33,6 +33,8 @@ export async function POST(request: NextRequest) {
         dailyLimit: process.env.WALLET_DAILY_LIMIT || '100',
         perTxLimit: process.env.WALLET_PER_TX_LIMIT || '10',
         network: (process.env.WALLET_NETWORK as any) || 'avalanche-fuji',
+        privacyMode: body.privateMode ?? true,
+        privacyRegistryAddress: process.env.PRIVATE_PAYMENT_ENVELOPE_REGISTRY || undefined,
       });
 
       const agentId = await wallet.registerIdentity(body.name, body.description);
@@ -54,6 +56,8 @@ export async function POST(request: NextRequest) {
         dailyLimit: process.env.WALLET_DAILY_LIMIT || '100',
         perTxLimit: process.env.WALLET_PER_TX_LIMIT || '10',
         network: (process.env.WALLET_NETWORK as any) || 'avalanche-fuji',
+        privacyMode: body.privateMode ?? true,
+        privacyRegistryAddress: process.env.PRIVATE_PAYMENT_ENVELOPE_REGISTRY || undefined,
       });
 
       // Pay $0.01 to the agent's wallet via x402
@@ -97,6 +101,8 @@ export async function POST(request: NextRequest) {
       dailyLimit: process.env.WALLET_DAILY_LIMIT || '100',
       perTxLimit: process.env.WALLET_PER_TX_LIMIT || '10',
       network: (process.env.WALLET_NETWORK as any) || 'avalanche-fuji',
+      privacyMode: body.privateMode ?? true,
+      privacyRegistryAddress: process.env.PRIVATE_PAYMENT_ENVELOPE_REGISTRY || undefined,
     });
 
     steps[0].status = 'done';

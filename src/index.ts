@@ -5,6 +5,7 @@ export type {
   AgentWalletConfig,
   PaymentRequest,
   PaymentResult,
+  PaymentDisplay,
   BudgetStatus,
   SpendingGuard,
   X402PaymentRequest,
@@ -16,4 +17,4 @@ export type {
   FeedbackInput,
 } from './types.js';
 
-export const VERSION = '2.0.2';
+export const VERSION = '2.3.0';

@@ -27,6 +27,18 @@ interface DemoResult {
     actualGasCost?: string;
     apiCost: string;
     remainingBudget: string;
+    privacyEnvelopeId?: string;
+    privacyPayloadHash?: string;
+    display?: {
+      private: boolean;
+      amount: string;
+      gasCost: string;
+      totalCost: string;
+      apiCost: string;
+      txHash: string;
+      recipient: string;
+      memo?: string;
+    };
   };
   wallet?: { address: string; eoa: string; balance: string; budget: any };
   network?: string;
@@ -110,6 +122,8 @@ function Toggle({ enabled, onChange, label }: { enabled: boolean; onChange: (v: 
 export default function DemoPage() {
   const [activeSection, setActiveSection] = useState<'demo' | 'code' | 'marketplace'>('demo');
   const [selectedCity, setSelectedCity] = useState('Tokyo');
+  const [privateMode, setPrivateMode] = useState(true);
+  const [revealSpend, setRevealSpend] = useState(false);
   const [x402Enabled, setX402Enabled] = useState(false);
   const [running, setRunning] = useState(false);
   const [requestPhase, setRequestPhase] = useState<'idle' | 'connecting' | 'quoting' | 'paying' | 'settling'>('idle');
@@ -129,6 +143,35 @@ export default function DemoPage() {
 
   useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [logs]);
   useEffect(() => { if (activeSection === 'marketplace') fetchAgents(); }, [activeSection]);
+
+  const maskAmount = (value: string) => {
+    if (!privateMode || revealSpend) return `$${value} USDC`;
+    return 'Confidential';
+  };
+
+  const maskAddress = (value: string) => {
+    if (!privateMode || revealSpend) return value;
+    return `${value.slice(0, 8)}...hidden`;
+  };
+
+  const paymentView = (payment: DemoResult['payment']) => {
+    if (!payment) return null;
+    const display = payment.display;
+    const privateRedaction = Boolean(display?.private && privateMode && !revealSpend);
+    return {
+      apiFee: privateRedaction ? display?.apiCost ?? 'Confidential' : `$${payment.apiCost} USDC`,
+      estimatedGas: privateRedaction ? display?.gasCost ?? 'Confidential' : `$${payment.estimatedGasCost ?? payment.gasCost} USDC`,
+      actualGas: privateRedaction ? display?.gasCost ?? 'Confidential' : `$${payment.actualGasCost ?? payment.gasCost} USDC`,
+      total: privateRedaction ? display?.totalCost ?? 'Confidential' : `$${payment.totalCost} USDC`,
+      txHash: privateRedaction ? display?.txHash ?? 'Hidden until reveal' : payment.txHash,
+      recipient: privateRedaction ? display?.recipient ?? 'Hidden' : '',
+    };
+  };
+
+  const shortHash = (value?: string) => {
+    if (!value) return '';
+    return `${value.slice(0, 10)}...${value.slice(-8)}`;
+  };
 
   const fetchAgents = async () => {
     try {
@@ -192,8 +235,12 @@ export default function DemoPage() {
           const token = res.headers.get('x-payment-token') || 'USDC';
           setPaymentRequired({ price, recipient, token });
           addLog('⚡ 402 Payment Required', 'error');
-          addLog(`   Price: $${price} ${token}`, 'error');
-          addLog(`   Recipient: ${recipient.slice(0, 10)}...${recipient.slice(-4)}`, 'info');
+          if (privateMode) {
+            addLog('   Private mode: payment details are masked in the UI', 'info');
+          } else {
+            addLog(`   Price: $${price} ${token}`, 'error');
+            addLog(`   Recipient: ${recipient.slice(0, 10)}...${recipient.slice(-4)}`, 'info');
+          }
           addLog('', 'info');
           addLog('💡 Enable x402 Auto-Pay above to pay & get data', 'info');
         } else {
@@ -212,13 +259,13 @@ export default function DemoPage() {
     }
 
     // x402 ON: run the full demo flow
-    addLog('🤖 Initializing Agent Wallet...', 'info');
+    addLog('🤖 Initializing Private Agent Wallet...', 'info');
     try {
       setRequestPhase('paying');
       const res = await fetch('/api/demo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ city: selectedCity }),
+        body: JSON.stringify({ city: selectedCity, privateMode }),
       });
       const data: DemoResult = await res.json();
       setResult(data);
@@ -233,11 +280,17 @@ export default function DemoPage() {
       if (data.success && data.payment) {
         setRequestPhase('settling');
         addLog(`───────────────────────────────────`, 'info');
-        addLog(`💰 Total: $${data.payment.totalCost} USDC  │  API: $${data.payment.apiCost}  │  SmoothSend gas: $${data.payment.gasCost}`, 'success');
-        if (data.payment.estimatedGasCost && data.payment.actualGasCost && data.payment.estimatedGasCost !== data.payment.actualGasCost) {
-          addLog(`   Estimate: $${data.payment.estimatedGasCost}  →  Settled: $${data.payment.actualGasCost}`, 'info');
+        const view = paymentView(data.payment);
+        if (view && privateMode && !revealSpend) {
+          addLog(`💰 Total: ${view.total}  │  API: ${view.apiFee}  │  SmoothSend gas: ${view.estimatedGas}`, 'success');
+          addLog(`   Spend details stay masked until you reveal them in the UI`, 'info');
+        } else {
+          addLog(`💰 Total: $${data.payment.totalCost} USDC  │  API: $${data.payment.apiCost}  │  SmoothSend gas: $${data.payment.gasCost}`, 'success');
+          if (data.payment.estimatedGasCost && data.payment.actualGasCost && data.payment.estimatedGasCost !== data.payment.actualGasCost) {
+            addLog(`   Estimate: $${data.payment.estimatedGasCost}  →  Settled: $${data.payment.actualGasCost}`, 'info');
+          }
         }
-        addLog(`🔗 TxHash: ${data.payment.txHash}`, 'info');
+        addLog(`🔗 TxHash: ${data.payment.display?.private && privateMode && !revealSpend ? (view?.txHash ?? data.payment.txHash) : data.payment.txHash}`, 'info');
         addLog(`───────────────────────────────────`, 'info');
       }
     } catch (err: any) {
@@ -249,7 +302,10 @@ export default function DemoPage() {
       setRunning(false);
       setRequestPhase('idle');
     }
-  }, [x402Enabled, selectedCity]);
+  }, [privateMode, revealSpend, selectedCity, x402Enabled]);
+
+  const activePaymentView = result?.payment ? paymentView(result.payment) : null
+  const activePaymentPrivate = Boolean(result?.payment?.display?.private && privateMode && !revealSpend)
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white">
@@ -257,23 +313,23 @@ export default function DemoPage() {
       <header className="border-b border-white/5">
         <div className="max-w-6xl mx-auto px-6 py-16 md:py-20 text-center">
           <h1 className="text-4xl md:text-6xl font-bold tracking-tight mb-4">
-            <span className="text-white">x402 + </span>
+            <span className="text-white">Private </span>
             <span className="bg-gradient-to-r from-violet-400 to-cyan-400 bg-clip-text text-transparent">Agent Wallet</span>
           </h1>
           <p className="text-lg md:text-xl text-white/50 max-w-2xl mx-auto leading-relaxed">
-            AI agents pay for APIs in <span className="text-white font-medium">USDC</span> — including gas.
+            AI agents pay for APIs in <span className="text-white font-medium">USDC</span> while the spend stays masked in the product UX.
             No AVAX needed. No merchant subsidies. Zero setup.
           </p>
 
           <div className="flex justify-center gap-8 md:gap-16 mt-10 text-center">
             <div>
-              <div className="text-2xl font-bold text-white">100%</div>
-              <div className="text-xs text-white/30 mt-1">Merchant Revenue</div>
+              <div className="text-2xl font-bold text-white">Hidden</div>
+              <div className="text-xs text-white/30 mt-1">Spend Details</div>
             </div>
             <div className="w-px bg-white/10" />
             <div>
               <div className="text-2xl font-bold text-white">Live</div>
-              <div className="text-xs text-white/30 mt-1">SDK Gas Quote</div>
+              <div className="text-xs text-white/30 mt-1">Gasless Exec</div>
             </div>
             <div className="w-px bg-white/10" />
             <div>
@@ -300,12 +356,12 @@ export default function DemoPage() {
           </div>
           <div className="bg-violet-500/[0.03] border border-violet-500/20 rounded-xl p-6 relative">
             <div className="absolute -top-2.5 right-4">
-              <span className="text-[10px] font-mono text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded border border-emerald-400/20">Agent Wallet</span>
+              <span className="text-[10px] font-mono text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded border border-emerald-400/20">Private Agent Wallet</span>
             </div>
             <div className="space-y-3 text-sm mt-2">
               <div className="flex justify-between"><span className="text-white/40">Merchant receives</span><span className="text-emerald-400 font-semibold">100%</span></div>
               <div className="flex justify-between"><span className="text-white/40">Gas paid by</span><span className="text-white font-medium">Agent (USDC)</span></div>
-              <div className="flex justify-between"><span className="text-white/40">Setup</span><span className="text-white font-medium">Zero — SmoothSend handles it</span></div>
+              <div className="flex justify-between"><span className="text-white/40">Spend visibility</span><span className="text-white font-medium">Hidden by default</span></div>
               <div className="flex justify-between"><span className="text-white/40">Onboarding</span><span className="text-white font-medium">1 API key, 30 seconds</span></div>
             </div>
           </div>
@@ -362,6 +418,22 @@ export default function DemoPage() {
                   </div>
                 </div>
 
+                {/* Privacy Toggle */}
+                <div className="flex items-center justify-between py-2">
+                  <div>
+                    <div className="text-sm font-medium text-white/80">Private Spend Mode</div>
+                    <div className="text-xs text-white/30 mt-0.5">
+                      {privateMode ? 'Masks spend details in the UI' : 'Shows full payment details'}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className={`text-xs font-mono transition-colors ${privateMode ? 'text-violet-400' : 'text-white/20'}`}>
+                      {privateMode ? 'ON' : 'OFF'}
+                    </span>
+                    <Toggle enabled={privateMode} onChange={setPrivateMode} label="Toggle private mode" />
+                  </div>
+                </div>
+
                 {/* x402 Toggle */}
                 <div className="flex items-center justify-between py-2">
                   <div>
@@ -379,6 +451,21 @@ export default function DemoPage() {
                     <Toggle enabled={x402Enabled} onChange={setX402Enabled} label="Toggle x402" />
                   </div>
                 </div>
+
+                {privateMode && (
+                  <div className="flex items-center justify-between py-2">
+                    <div>
+                      <div className="text-sm font-medium text-white/80">Reveal Spend</div>
+                      <div className="text-xs text-white/30 mt-0.5">Temporarily show the hidden cost breakdown</div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className={`text-xs font-mono transition-colors ${revealSpend ? 'text-emerald-400' : 'text-white/20'}`}>
+                        {revealSpend ? 'REVEALED' : 'MASKED'}
+                      </span>
+                      <Toggle enabled={revealSpend} onChange={setRevealSpend} label="Reveal spend" />
+                    </div>
+                  </div>
+                )}
 
                 {/* Request Button */}
                 <button
@@ -424,16 +511,20 @@ export default function DemoPage() {
                     <div className="flex-1 min-w-0">
                       <h3 className="text-lg font-semibold text-amber-300 mb-1">402 Payment Required</h3>
                       <p className="text-sm text-white/50 mb-3">
-                        This API endpoint requires <span className="text-white font-medium">${paymentRequired.price} USDC</span> before returning data.
+                        This API endpoint requires <span className="text-white font-medium">
+                          {privateMode && !revealSpend ? 'confidential payment details' : `$${paymentRequired.price} USDC`}
+                        </span> before returning data.
                       </p>
                       <div className="flex flex-wrap gap-3 text-xs">
                         <div className="bg-white/5 px-3 py-1.5 rounded-lg">
                           <span className="text-white/30">Price</span>
-                          <span className="ml-2 text-white font-mono">${paymentRequired.price} {paymentRequired.token}</span>
+                          <span className="ml-2 text-white font-mono">
+                            {privateMode && !revealSpend ? 'Hidden' : `$${paymentRequired.price} ${paymentRequired.token}`}
+                          </span>
                         </div>
                         <div className="bg-white/5 px-3 py-1.5 rounded-lg">
                           <span className="text-white/30">To</span>
-                          <span className="ml-2 text-white/60 font-mono">{paymentRequired.recipient.slice(0, 8)}...{paymentRequired.recipient.slice(-4)}</span>
+                          <span className="ml-2 text-white/60 font-mono">{maskAddress(paymentRequired.recipient)}</span>
                         </div>
                       </div>
                       <div className="mt-4 pt-3 border-t border-amber-500/10">
@@ -455,8 +546,8 @@ export default function DemoPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="text-lg font-semibold text-emerald-300 mb-1">
-                        {result.result.weather.city || selectedCity}
-                      </h3>
+                      {result.result.weather.city || selectedCity}
+                    </h3>
                       <div className="flex items-baseline gap-2 mb-2">
                         <span className="text-3xl font-bold text-white">{result.result.weather.temperature}°C</span>
                         <span className="text-sm text-white/50 capitalize">{result.result.weather.condition}</span>
@@ -509,30 +600,99 @@ export default function DemoPage() {
 
               {/* Transaction Info (shown after successful x402) */}
               {result?.payment && (
-                <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-5 animate-fade-in space-y-3">
-                  <h3 className="text-xs font-semibold text-white/30 uppercase tracking-widest">Cost Breakdown</h3>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between items-center">
-                      <span className="text-white/40">API Fee</span>
-                      <span className="font-mono text-white/80">${result.payment.apiCost} USDC</span>
+                <div className="relative overflow-hidden rounded-2xl border border-violet-500/20 bg-gradient-to-br from-white/[0.03] via-white/[0.015] to-cyan-500/[0.03] p-5 animate-fade-in">
+                  <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-violet-400/60 to-transparent" />
+                  <div className="flex items-start justify-between gap-4 mb-4">
+                    <div>
+                      <h3 className="text-xs font-semibold text-white/30 uppercase tracking-[0.28em]">Onchain Privacy Receipt</h3>
+                      <p className="mt-1 text-xs text-white/35">Committed by the SDK and anchored by the privacy registry.</p>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-white/40">Estimated gas</span>
-                      <span className="font-mono text-white/60">${result.payment.estimatedGasCost ?? result.payment.gasCost} USDC</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-white/40">Actual settled fee</span>
-                      <span className="font-mono text-white/60">${result.payment.actualGasCost ?? result.payment.gasCost} USDC</span>
-                    </div>
-                    <div className="pt-2 border-t border-white/5 flex justify-between items-center">
-                      <span className="text-xs font-semibold text-white/50">Total</span>
-                      <span className="font-semibold text-emerald-400">${result.payment.totalCost} USDC</span>
+                    <div className="flex items-center gap-2">
+                      <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-[10px] font-mono text-emerald-300">
+                        {result.payment.privacyEnvelopeId ? 'Committed' : 'Pending'}
+                      </span>
+                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-1 text-[10px] font-mono text-white/45">
+                        Fuji
+                      </span>
                     </div>
                   </div>
-                  <div className="pt-2 border-t border-white/5">
-                    <div className="text-white/30 text-xs mb-1">Transaction</div>
-                    <TxLink txHash={result.payment.txHash} network={result.network} />
+
+                  <div className="grid gap-4 md:grid-cols-[1.1fr_0.9fr]">
+                    <div className="rounded-xl border border-white/5 bg-black/20 p-4">
+                      <div className="text-[11px] uppercase tracking-[0.2em] text-white/25 mb-3">Cost Breakdown</div>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between items-center">
+                          <span className="text-white/40">API Fee</span>
+                          <span className="font-mono text-white/80">{activePaymentPrivate ? activePaymentView?.apiFee : maskAmount(result.payment.apiCost)}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-white/40">Estimated gas</span>
+                          <span className="font-mono text-white/60">{activePaymentPrivate ? activePaymentView?.estimatedGas : maskAmount(result.payment.estimatedGasCost ?? result.payment.gasCost)}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-white/40">Actual settled fee</span>
+                          <span className="font-mono text-white/60">{activePaymentPrivate ? activePaymentView?.actualGas : maskAmount(result.payment.actualGasCost ?? result.payment.gasCost)}</span>
+                        </div>
+                        <div className="pt-2 border-t border-white/5 flex justify-between items-center">
+                          <span className="text-xs font-semibold text-white/50">Total</span>
+                          <span className="font-semibold text-emerald-400">{activePaymentPrivate ? activePaymentView?.total : maskAmount(result.payment.totalCost)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-white/5 bg-black/20 p-4">
+                      <div className="text-[11px] uppercase tracking-[0.2em] text-white/25 mb-3">Receipt Chain</div>
+                      <div className="space-y-3">
+                        <div className="flex items-start gap-3">
+                          <div className="mt-1 h-2.5 w-2.5 rounded-full bg-violet-400 shadow-[0_0_0_4px_rgba(168,85,247,0.12)]" />
+                          <div>
+                            <div className="text-white/80 text-sm font-medium">Envelope committed</div>
+                            <div className="text-white/35 text-xs font-mono break-all">{shortHash(result.payment.privacyEnvelopeId ?? activePaymentView?.txHash)}</div>
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-3">
+                          <div className="mt-1 h-2.5 w-2.5 rounded-full bg-cyan-400 shadow-[0_0_0_4px_rgba(34,211,238,0.12)]" />
+                          <div>
+                            <div className="text-white/80 text-sm font-medium">Intent hashed</div>
+                            <div className="text-white/35 text-xs font-mono break-all">
+                              {shortHash(result.payment.privacyPayloadHash || (activePaymentPrivate ? activePaymentView?.txHash : result.payment.txHash))}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-3">
+                          <div className={`mt-1 h-2.5 w-2.5 rounded-full ${result.payment.txHash ? 'bg-emerald-400' : 'bg-white/20'} shadow-[0_0_0_4px_rgba(52,211,153,0.10)]`} />
+                          <div>
+                            <div className="text-white/80 text-sm font-medium">Sponsored execution</div>
+                            {activePaymentPrivate ? (
+                              <span className="text-white/40 font-mono text-xs">Hidden until reveal</span>
+                            ) : (
+                              <TxLink txHash={result.payment.txHash} network={result.network} />
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
+
+                  {(result.payment.privacyEnvelopeId || result.payment.privacyPayloadHash) && (
+                    <div className="mt-4 rounded-xl border border-white/5 bg-white/[0.02] p-4">
+                      <div className="text-white/30 text-xs mb-3 uppercase tracking-[0.2em]">Privacy Envelope Details</div>
+                      <div className="grid gap-3 md:grid-cols-2">
+                        {result.payment.privacyEnvelopeId && (
+                          <div className="rounded-lg border border-white/5 bg-black/20 p-3">
+                            <div className="text-[11px] text-white/30 mb-1">Envelope ID</div>
+                            <div className="font-mono text-xs text-white/70 break-all">{shortHash(result.payment.privacyEnvelopeId)}</div>
+                          </div>
+                        )}
+                        {result.payment.privacyPayloadHash && (
+                          <div className="rounded-lg border border-white/5 bg-black/20 p-3">
+                            <div className="text-[11px] text-white/30 mb-1">Payload Hash</div>
+                            <div className="font-mono text-xs text-white/70 break-all">{shortHash(result.payment.privacyPayloadHash)}</div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -546,7 +706,9 @@ export default function DemoPage() {
                     EOA: <span className="text-white/40">{result.wallet.eoa.slice(0, 10)}...{result.wallet.eoa.slice(-4)}</span>
                   </div>
                   <div className="text-white/30 font-mono">
-                    Balance: <span className="text-emerald-400">${parseFloat(result.wallet.balance).toFixed(2)} USDC</span>
+                    Balance: <span className="text-emerald-400">
+                      {privateMode && !revealSpend ? 'Confidential' : `$${parseFloat(result.wallet.balance).toFixed(2)} USDC`}
+                    </span>
                   </div>
                 </div>
               )}
@@ -755,7 +917,7 @@ console.log(\`Settled fee: $\${weather.payment.actualGasCost}\`);
           <div className="flex items-center gap-4">
             <a href="https://www.npmjs.com/package/@vedmohan/agent-wallet" target="_blank" rel="noopener noreferrer"
               className="text-[10px] text-white/25 hover:text-white/50 transition-colors font-mono">
-              SDK v2.0.3
+                SDK v2.3.0
             </a>
             <a href="https://smoothsend.xyz" target="_blank" rel="noopener noreferrer"
               className="flex items-center gap-3 text-sm md:text-base font-semibold text-white/45 hover:text-white/80 transition-all group">

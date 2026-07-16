@@ -1,7 +1,7 @@
 import { Wallet, type HDNodeWallet, id } from 'ethers';
 import {
   createPublicClient, createWalletClient, http,
-  encodeFunctionData, formatUnits, parseUnits, type Address, type Log,
+  encodeAbiParameters, encodeFunctionData, formatUnits, keccak256, parseUnits, type Address, type Log,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { avalancheFuji, avalanche } from 'viem/chains';
@@ -77,6 +77,23 @@ const REPUTATION_REGISTRY_ABI = [
     ] },
 ] as const;
 
+const PRIVATE_PAYMENT_ENVELOPE_REGISTRY_ABI = [
+  { name: 'commitEnvelope', type: 'function', stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'recipient', type: 'address' },
+      { name: 'payloadHash', type: 'bytes32' },
+      { name: 'salt', type: 'bytes32' },
+      { name: 'ciphertext', type: 'bytes' },
+    ],
+    outputs: [{ name: 'envelopeId', type: 'bytes32' }] },
+  { name: 'markExecuted', type: 'function', stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'envelopeId', type: 'bytes32' },
+      { name: 'executionHash', type: 'bytes32' },
+    ],
+    outputs: [] },
+] as const;
+
 const NETWORK_CONFIG = {
   'avalanche-fuji': {
     chain: avalancheFuji,
@@ -108,6 +125,7 @@ export class AgentWallet {
   private usdcDecimals: number;
   private paymasterAddress: Address;
   private rpcUrl: string;
+  private privacyRegistryAddress?: Address;
   private dailySpent: number = 0;
   private txCountToday: number = 0;
   private lastResetDate: Date = new Date();
@@ -120,6 +138,7 @@ export class AgentWallet {
     config: AgentWalletConfig, smartAccountAddress: Address,
     usdcAddress: Address, usdcDecimals: number,
     paymasterAddress: Address, rpcUrl: string,
+    privacyRegistryAddress: Address | undefined,
     identityRegistryAddress: Address, reputationRegistryAddress: Address,
   ) {
     this.wallet = wallet; this.smoothsend = smoothsend;
@@ -128,6 +147,7 @@ export class AgentWallet {
     this.usdcAddress = usdcAddress; this.usdcDecimals = usdcDecimals;
     this.paymasterAddress = paymasterAddress;
     this.rpcUrl = rpcUrl;
+    this.privacyRegistryAddress = privacyRegistryAddress;
     this._identityRegistryAddress = identityRegistryAddress;
     this._reputationRegistryAddress = reputationRegistryAddress;
   }
@@ -169,9 +189,13 @@ export class AgentWallet {
     const paymasterAddress = (network.networkLabel === 'mainnet'
       ? aaDefaults.paymasterMainnet : aaDefaults.paymasterFuji) ?? undefined;
     if (!paymasterAddress) throw new Error('[AgentWallet] Could not determine VerifyingPaymaster address.');
+    const privacyRegistryAddress = config.privacyRegistryAddress
+      ? (config.privacyRegistryAddress as Address)
+      : undefined;
     console.log(`🏦 Smart Account:   ${smartAccountAddress}`);
     console.log(`💳 USDC Token:      ${network.usdcAddress}`);
     console.log(`⛽ Paymaster:       ${paymasterAddress}`);
+    if (privacyRegistryAddress) console.log(`🔒 Privacy Registry: ${privacyRegistryAddress}`);
 
     // Resolve ERC-8004 registry addresses
     const identityRegistryAddress = config.identityRegistryAddress
@@ -185,6 +209,7 @@ export class AgentWallet {
       wallet, smoothsend, config, smartAccountAddress,
       network.usdcAddress, network.usdcDecimals,
       paymasterAddress, rpcUrl,
+      privacyRegistryAddress,
       identityRegistryAddress, reputationRegistryAddress,
     );
     await agent.checkAndResetBudget();
@@ -193,6 +218,78 @@ export class AgentWallet {
 
   get address(): string { return this.smartAccountAddress; }
   get eoaAddress(): string { return this.wallet.address; }
+
+  private isPrivatePayment(request: PaymentRequest): boolean {
+    return request.private ?? this.config.privacyMode ?? false;
+  }
+
+  private redactAmount(amount: string, privateMode: boolean): string {
+    return privateMode ? 'Confidential' : `$${amount} USDC`;
+  }
+
+  private redactAddress(address: string, privateMode: boolean): string {
+    return privateMode ? `${address.slice(0, 8)}...hidden` : address;
+  }
+
+  private buildPrivatePayloadHash(request: PaymentRequest): `0x${string}` {
+    return id(JSON.stringify({
+      to: request.to,
+      amount: request.amount,
+      memo: request.memo ?? '',
+      token: request.token ?? this.usdcAddress,
+      network: this.config.network,
+    })) as `0x${string}`;
+  }
+
+  private buildPrivateEnvelopeSalt(): `0x${string}` {
+    return id(Wallet.createRandom().address) as `0x${string}`;
+  }
+
+  private computePrivateEnvelopeId(
+    recipient: Address,
+    payloadHash: `0x${string}`,
+    salt: `0x${string}`,
+  ): `0x${string}` | undefined {
+    if (!this.privacyRegistryAddress) return undefined;
+    const network = NETWORK_CONFIG[this.config.network];
+    return keccak256(encodeAbiParameters(
+      [
+        { type: 'address' },
+        { type: 'address' },
+        { type: 'bytes32' },
+        { type: 'bytes32' },
+        { type: 'uint256' },
+        { type: 'address' },
+      ],
+      [
+        this.wallet.address as Address,
+        recipient,
+        payloadHash,
+        salt,
+        BigInt(network.chain.id),
+        this.privacyRegistryAddress,
+      ],
+    ));
+  }
+
+  private buildPaymentDisplay(
+    request: PaymentRequest,
+    txHash: string,
+    totalCost: string,
+    gasCost: string,
+    privateMode: boolean,
+  ): import('./types.js').PaymentDisplay {
+    return {
+      private: privateMode,
+      amount: this.redactAmount(request.amount, privateMode),
+      gasCost: this.redactAmount(gasCost, privateMode),
+      totalCost: this.redactAmount(totalCost, privateMode),
+      apiCost: this.redactAmount(request.amount, privateMode),
+      txHash: privateMode ? 'Hidden until reveal' : txHash,
+      recipient: this.redactAddress(request.to, privateMode),
+      memo: privateMode ? 'Hidden until reveal' : (request.memo ?? ''),
+    };
+  }
 
   async getBalance(): Promise<string> {
     try {
@@ -207,15 +304,33 @@ export class AgentWallet {
   }
 
   async payForService(request: PaymentRequest): Promise<PaymentResult> {
-    console.log(`\n💸 Processing payment: ${request.amount} USDC → ${request.to}`);
-    if (request.memo) console.log(`   Memo: ${request.memo}`);
+    const privateMode = this.isPrivatePayment(request);
+    console.log(
+      `\n💸 Processing ${privateMode ? 'private ' : ''}payment: ${this.redactAmount(request.amount, privateMode)} → ${this.redactAddress(request.to, privateMode)}`
+    );
+    if (request.memo && !privateMode) console.log(`   Memo: ${request.memo}`);
     await this.checkAndResetBudget();
     await this.validatePayment(request);
-    console.log(`   API cost:  $${request.amount} USDC`);
+    console.log(`   API cost:  ${this.redactAmount(request.amount, privateMode)}`);
     const amountWei = parseUnits(request.amount, this.usdcDecimals);
     const transferData = encodeFunctionData({
       abi: ERC20_ABI, functionName: 'transfer', args: [request.to as Address, amountWei],
     });
+    const privatePayloadHash = privateMode ? this.buildPrivatePayloadHash(request) : undefined;
+    const privateEnvelopeSalt = privateMode ? this.buildPrivateEnvelopeSalt() : undefined;
+    let privateEnvelopeData: `0x${string}` | undefined;
+    if (privateMode && this.privacyRegistryAddress && privatePayloadHash && privateEnvelopeSalt) {
+      privateEnvelopeData = encodeFunctionData({
+        abi: PRIVATE_PAYMENT_ENVELOPE_REGISTRY_ABI,
+        functionName: 'commitEnvelope',
+        args: [
+          request.to as Address,
+          privatePayloadHash,
+          privateEnvelopeSalt,
+          '0x',
+        ],
+      });
+    }
 
     // For user-pays-erc20, the paymaster pulls USDC from the smart account via safeTransferFrom.
     // The smart account must approve the paymaster contract first.
@@ -229,24 +344,33 @@ export class AgentWallet {
     const approveAmount = parseUnits('1000', this.usdcDecimals); // approve 1000 USDC once
 
     let calls: Array<{ to: Address; data: `0x${string}`; value: bigint }>;
+    if (privateEnvelopeData && this.privacyRegistryAddress) {
+      calls = [{ to: this.privacyRegistryAddress, data: privateEnvelopeData, value: 0n }];
+    } else {
+      calls = [];
+    }
     if (currentAllowance < approveAmount) {
       const approveData = encodeFunctionData({
         abi: ERC20_ABI, functionName: 'approve',
         args: [this.paymasterAddress, approveAmount],
       });
       calls = [
+        ...calls,
         { to: this.usdcAddress, data: approveData, value: 0n },
         { to: this.usdcAddress, data: transferData, value: 0n },
       ];
       console.log(`   ✅  Approving paymaster to spend USDC...`);
     } else {
-      calls = [{ to: this.usdcAddress, data: transferData, value: 0n }];
+      calls = [
+        ...calls,
+        { to: this.usdcAddress, data: transferData, value: 0n },
+      ];
     }
 
     const sdkGasCost = await this.estimateSmoothSendGasCost(calls);
     const estimatedGasCostUSDC = sdkGasCost ?? await this.estimateGasCost();
     const totalCost = (parseFloat(request.amount) + parseFloat(estimatedGasCostUSDC)).toFixed(6);
-    console.log(`   Gas cost:  ~$${estimatedGasCostUSDC} USDC${sdkGasCost ? ' (SmoothSend SDK)' : ' (fallback estimate)'}`);
+    console.log(`   Gas cost:  ~${this.redactAmount(estimatedGasCostUSDC, privateMode)}${sdkGasCost ? ' (SmoothSend SDK)' : ' (fallback estimate)'}`);
 
     const balance = await this.getBalance();
     if (parseFloat(balance) < parseFloat(totalCost)) {
@@ -262,18 +386,28 @@ export class AgentWallet {
     });
     console.log(`   ✅ Payment succeeded!`);
     console.log(`      UserOpHash: ${result.userOpHash}`);
-    if (result.transactionHash) console.log(`      TxHash:     ${result.transactionHash}`);
+    if (result.transactionHash) {
+      console.log(`      TxHash:     ${privateMode ? 'hidden' : result.transactionHash}`);
+    }
 
     const actualGasCost = this.parseActualGasCostUSDC(result.receipt?.logs, request.to as Address);
     const gasCost = actualGasCost ?? estimatedGasCostUSDC;
     const realTotalCost = (parseFloat(request.amount) + parseFloat(gasCost)).toFixed(6);
     await this.recordSpending(parseFloat(realTotalCost));
     const budget = await this.getBudgetStatus();
+    const txHash = result.transactionHash ?? result.userOpHash;
+    const privacyEnvelopeId = (privateEnvelopeData && privatePayloadHash && privateEnvelopeSalt)
+      ? this.computePrivateEnvelopeId(request.to as Address, privatePayloadHash, privateEnvelopeSalt)
+      : undefined;
     return {
-      txHash: result.transactionHash ?? result.userOpHash, totalCost: realTotalCost,
+      txHash,
+      totalCost: realTotalCost,
       gasCost, estimatedGasCost: estimatedGasCostUSDC, actualGasCost: actualGasCost ?? gasCost,
       apiCost: request.amount,
       remainingBudget: budget.remaining, receipt: result.receipt ?? undefined,
+      privacyEnvelopeId,
+      privacyPayloadHash: privatePayloadHash,
+      display: this.buildPaymentDisplay(request, txHash, realTotalCost, gasCost, privateMode),
     };
   }
 

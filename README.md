@@ -1,6 +1,6 @@
-# 🤖 Agent Wallet — x402 + ERC-8004
+# 🤖 Private Agent Wallet — gasless x402 + ERC-8004
 
-**AI agents pay for APIs in USDC on Avalanche — including gas. No AVAX needed. Plus on-chain agent identity and reputation via ERC-8004.**
+**AI agents pay for APIs in USDC on Avalanche — including gas — while spend details stay masked in the product UX. No AVAX needed. Plus on-chain agent identity and reputation via ERC-8004.**
 
 Built on [SmoothSend](https://smoothsend.xyz) ERC-4337 infrastructure (VerifyingPaymaster + bundler on Avalanche C-Chain).
 
@@ -12,9 +12,19 @@ Built on [SmoothSend](https://smoothsend.xyz) ERC-4337 infrastructure (Verifying
 
 | Tab | What it does |
 |-----|-------------|
-| **Live Demo** | Toggle x402 OFF → see raw `402 Payment Required`. Toggle ON → auto-pays in USDC, get weather data. City picker (Tokyo, London, Dubai, NYC, Singapore). `$0.02/tx` |
+| **Live Demo** | Toggle x402 OFF → see raw `402 Payment Required`. Toggle ON → auto-pays in USDC, get weather data. Private spend mode masks cost details until you reveal them. City picker (Tokyo, London, Dubai, NYC, Singapore). |
 | **Marketplace** | ERC-8004 agent registry. Register your agent, browse agents by reputation score, hire via x402 payment + on-chain feedback |
 | **Quick Start** | Copy-paste code snippets |
+
+### Pivot Summary
+
+This hackathon version focuses on a single, easy-to-demo story:
+
+- gasless agent payments on Avalanche
+- private spend presentation in the UI
+- ERC-8004 identity and reputation as the trust layer
+
+The working execution layer stays the same. The product narrative shifts from a general agent wallet to a `Private Agent Wallet`.
 
 ---
 

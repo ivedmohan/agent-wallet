@@ -24,8 +24,16 @@ async function main() {
   const repAddr = await reputationRegistry.getAddress();
   console.log("   ✓ ReputationRegistry:", repAddr);
 
+  // ── Deploy PrivatePaymentEnvelopeRegistry ────────────────────
+  console.log("3/4 Deploying PrivatePaymentEnvelopeRegistry...");
+  const PrivatePaymentEnvelopeRegistry = await ethers.getContractFactory("PrivatePaymentEnvelopeRegistry");
+  const privatePaymentEnvelopeRegistry = await PrivatePaymentEnvelopeRegistry.deploy();
+  await privatePaymentEnvelopeRegistry.waitForDeployment();
+  const privateAddr = await privatePaymentEnvelopeRegistry.getAddress();
+  console.log("   ✓ PrivatePaymentEnvelopeRegistry:", privateAddr);
+
   // ── Initialize ReputationRegistry ────────────────────────────
-  console.log("3/3 Initializing ReputationRegistry → linking IdentityRegistry...");
+  console.log("4/4 Initializing ReputationRegistry → linking IdentityRegistry...");
   const initTx = await reputationRegistry.initialize(idAddr);
   await initTx.wait();
   console.log("   ✓ Initialized");
@@ -56,10 +64,12 @@ async function main() {
   console.log("═══════════════════════════════════════════════");
   console.log(`IDENTITY_REGISTRY=${idAddr}`);
   console.log(`REPUTATION_REGISTRY=${repAddr}`);
+  console.log(`PRIVATE_PAYMENT_ENVELOPE_REGISTRY=${privateAddr}`);
   console.log(`AGENT_ID=1`);
   console.log("\nView on Snowtrace:");
   console.log(`  https://testnet.snowtrace.io/address/${idAddr}`);
   console.log(`  https://testnet.snowtrace.io/address/${repAddr}`);
+  console.log(`  https://testnet.snowtrace.io/address/${privateAddr}`);
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; });
