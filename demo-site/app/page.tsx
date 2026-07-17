@@ -1,5 +1,6 @@
 'use client';
 
+import './polyfills';
 import { useState, useCallback, useRef, useEffect } from 'react';
 
 // ── Types ───────────────────────────────────────────────────────

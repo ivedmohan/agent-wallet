@@ -1,5 +1,6 @@
 'use client';
 
+import '../polyfills';
 import { useEffect, useState } from 'react';
 import { parseUnits, formatUnits } from 'viem';
 import { useAccount, useConnect, useDisconnect, usePublicClient, useWalletClient } from 'wagmi';
