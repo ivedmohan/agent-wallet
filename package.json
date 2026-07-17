@@ -1,6 +1,6 @@
 {
   "name": "@vedmohan/agent-wallet",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "description": "Private Agent Wallet for x402: AI agents pay for APIs in USDC on Avalanche with privacy-aware payment outputs and SmoothSend-sponsored execution.",
   "type": "module",
   "main": "dist/index.js",

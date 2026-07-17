@@ -10,6 +10,12 @@ export interface AgentWalletConfig {
   privacyMode?: boolean;
   /** Optional registry for private payment envelopes */
   privacyRegistryAddress?: string;
+  /** Optional bridge for encrypted ERC transfers */
+  eercBridge?: EercBridge;
+  /** Optional default encrypted token address */
+  eercTokenAddress?: string;
+  /** Optional decimals for encrypted token amounts */
+  eercDecimals?: number;
   /** ERC-8004 IdentityRegistry contract address (default: Fuji deployment) */
   identityRegistryAddress?: string;
   /** ERC-8004 ReputationRegistry contract address (default: Fuji deployment) */
@@ -84,6 +90,36 @@ export interface X402Result {
   status: number;
   payment?: PaymentResult;
   paid: boolean;
+}
+
+export interface EncryptedBalanceSnapshot {
+  decryptedBalance: bigint;
+  parsedDecryptedBalance: string;
+  encryptedBalance: bigint[];
+  auditorPublicKey: bigint[];
+  decimals: bigint;
+}
+
+export interface EercTransferResult {
+  transactionHash: string;
+  receiverEncryptedAmount?: string[];
+  senderEncryptedAmount?: string[];
+}
+
+export interface EercBridge {
+  getBalanceSnapshot(tokenAddress?: string): Promise<EncryptedBalanceSnapshot>;
+  transfer(
+    to: string,
+    amount: bigint,
+    tokenAddress?: string,
+  ): Promise<EercTransferResult>;
+  register?(): Promise<{ key: string; transactionHash: string }>;
+  generateDecryptionKey?(): Promise<string>;
+  deposit?(amount: bigint, tokenAddress: string): Promise<EercTransferResult>;
+  withdraw?(
+    amount: bigint,
+    tokenAddress: string,
+  ): Promise<EercTransferResult>;
 }
 
 // ── ERC-8004 Types ────────────────────────────────────────────

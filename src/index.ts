@@ -15,6 +15,9 @@ export type {
   AgentReputation,
   AgentListing,
   FeedbackInput,
+  EncryptedBalanceSnapshot,
+  EercBridge,
+  EercTransferResult,
 } from './types.js';
 
-export const VERSION = '2.3.0';
+export const VERSION = '2.4.0';

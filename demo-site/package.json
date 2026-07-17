@@ -5,20 +5,23 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
-    "dev:local": "npm run link:wallet 2>/dev/null; npm run rebuild:wallet && next dev",
-    "link:wallet": "npm link @vedmohan/agent-wallet",
-    "unlink:wallet": "npm unlink --no-save @vedmohan/agent-wallet && npm install",
-    "rebuild:wallet": "cd ../ && npm run build 2>&1 | tail -3",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
-    "@vedmohan/agent-wallet": "^2.3.0",
+    "@avalabs/ac-eerc-sdk": "^1.0.0",
+    "@tanstack/react-query": "^5.81.5",
+    "@vedmohan/agent-wallet": "^2.4.0",
+    "buffer": "^6.0.3",
+    "crypto-browserify": "^3.12.1",
     "next": "^15.0.0",
+    "process": "^0.11.10",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "viem": "^2.21.0"
+    "stream-browserify": "^3.0.0",
+    "viem": "^2.21.0",
+    "wagmi": "^2.16.3"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

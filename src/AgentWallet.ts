@@ -14,6 +14,7 @@ import { McpClient } from './McpClient.js';
 import type {
   AgentWalletConfig, PaymentRequest, PaymentResult, BudgetStatus,
   AgentIdentity, AgentReputation, AgentListing, FeedbackInput,
+  EercBridge, EncryptedBalanceSnapshot, EercTransferResult,
 } from './types.js';
 
 const ERC20_ABI = [
@@ -126,6 +127,9 @@ export class AgentWallet {
   private paymasterAddress: Address;
   private rpcUrl: string;
   private privacyRegistryAddress?: Address;
+  private eercBridge?: EercBridge;
+  private eercTokenAddress?: Address;
+  private eercDecimals: number;
   private dailySpent: number = 0;
   private txCountToday: number = 0;
   private lastResetDate: Date = new Date();
@@ -140,6 +144,9 @@ export class AgentWallet {
     paymasterAddress: Address, rpcUrl: string,
     privacyRegistryAddress: Address | undefined,
     identityRegistryAddress: Address, reputationRegistryAddress: Address,
+    eercBridge: EercBridge | undefined,
+    eercTokenAddress: Address | undefined,
+    eercDecimals: number,
   ) {
     this.wallet = wallet; this.smoothsend = smoothsend;
     this.mcp = new McpClient(); this.config = config;
@@ -148,6 +155,9 @@ export class AgentWallet {
     this.paymasterAddress = paymasterAddress;
     this.rpcUrl = rpcUrl;
     this.privacyRegistryAddress = privacyRegistryAddress;
+    this.eercBridge = eercBridge;
+    this.eercTokenAddress = eercTokenAddress;
+    this.eercDecimals = eercDecimals;
     this._identityRegistryAddress = identityRegistryAddress;
     this._reputationRegistryAddress = reputationRegistryAddress;
   }
@@ -192,10 +202,19 @@ export class AgentWallet {
     const privacyRegistryAddress = config.privacyRegistryAddress
       ? (config.privacyRegistryAddress as Address)
       : undefined;
+    const eercTokenAddress = config.eercTokenAddress
+      ? (config.eercTokenAddress as Address)
+      : undefined;
+    const eercDecimals = config.eercDecimals ?? 2;
     console.log(`🏦 Smart Account:   ${smartAccountAddress}`);
     console.log(`💳 USDC Token:      ${network.usdcAddress}`);
     console.log(`⛽ Paymaster:       ${paymasterAddress}`);
     if (privacyRegistryAddress) console.log(`🔒 Privacy Registry: ${privacyRegistryAddress}`);
+    if (config.eercBridge) {
+      console.log(`🧩 eERC bridge:     enabled`);
+      if (eercTokenAddress) console.log(`🪙 eERC token:      ${eercTokenAddress}`);
+      console.log(`🔢 eERC decimals:   ${eercDecimals}`);
+    }
 
     // Resolve ERC-8004 registry addresses
     const identityRegistryAddress = config.identityRegistryAddress
@@ -211,6 +230,9 @@ export class AgentWallet {
       paymasterAddress, rpcUrl,
       privacyRegistryAddress,
       identityRegistryAddress, reputationRegistryAddress,
+      config.eercBridge,
+      eercTokenAddress,
+      eercDecimals,
     );
     await agent.checkAndResetBudget();
     return agent;
@@ -243,6 +265,14 @@ export class AgentWallet {
 
   private buildPrivateEnvelopeSalt(): `0x${string}` {
     return id(Wallet.createRandom().address) as `0x${string}`;
+  }
+
+  private resolvePrivateTokenAddress(request: PaymentRequest): Address {
+    const tokenAddress = request.token ?? this.eercTokenAddress;
+    if (!tokenAddress) {
+      throw new Error('[AgentWallet] privateTransfer requires eercTokenAddress or request.token.');
+    }
+    return tokenAddress as Address;
   }
 
   private computePrivateEnvelopeId(
@@ -311,6 +341,9 @@ export class AgentWallet {
     if (request.memo && !privateMode) console.log(`   Memo: ${request.memo}`);
     await this.checkAndResetBudget();
     await this.validatePayment(request);
+    if (privateMode && this.eercBridge) {
+      return this.privateTransfer(request);
+    }
     console.log(`   API cost:  ${this.redactAmount(request.amount, privateMode)}`);
     const amountWei = parseUnits(request.amount, this.usdcDecimals);
     const transferData = encodeFunctionData({
@@ -408,6 +441,47 @@ export class AgentWallet {
       privacyEnvelopeId,
       privacyPayloadHash: privatePayloadHash,
       display: this.buildPaymentDisplay(request, txHash, realTotalCost, gasCost, privateMode),
+    };
+  }
+
+  async getEncryptedBalance(tokenAddress?: string): Promise<EncryptedBalanceSnapshot> {
+    if (!this.eercBridge) {
+      throw new Error('[AgentWallet] eERC bridge is not configured.');
+    }
+    return this.eercBridge.getBalanceSnapshot(tokenAddress ?? this.eercTokenAddress);
+  }
+
+  async privateTransfer(request: PaymentRequest): Promise<PaymentResult> {
+    if (!this.eercBridge) {
+      throw new Error('[AgentWallet] eERC bridge is not configured.');
+    }
+
+    const tokenAddress = this.resolvePrivateTokenAddress(request);
+    const amountUnits = parseUnits(request.amount, this.eercDecimals);
+    const snapshot = await this.eercBridge.getBalanceSnapshot(tokenAddress);
+
+    console.log(
+      `\n🔒 Processing private payment: ${this.redactAmount(request.amount, true)} → ${this.redactAddress(request.to, true)}`
+    );
+    if (snapshot.decryptedBalance < amountUnits) {
+      throw new Error(`Insufficient encrypted balance: need ${request.amount}, have ${snapshot.parsedDecryptedBalance}`);
+    }
+
+    const transfer = await this.eercBridge.transfer(request.to, amountUnits, tokenAddress);
+    const txHash = transfer.transactionHash;
+    await this.recordSpending(parseFloat(request.amount));
+    const budget = await this.getBudgetStatus();
+
+    return {
+      txHash,
+      totalCost: request.amount,
+      gasCost: '0',
+      estimatedGasCost: '0',
+      actualGasCost: '0',
+      apiCost: request.amount,
+      remainingBudget: budget.remaining,
+      receipt: undefined,
+      display: this.buildPaymentDisplay(request, txHash, request.amount, '0', true),
     };
   }
 

@@ -1,6 +1,6 @@
 # 🤖 Private Agent Wallet — gasless x402 + ERC-8004
 
-**AI agents pay for APIs in USDC on Avalanche — including gas — while spend details stay masked in the product UX. No AVAX needed. Plus on-chain agent identity and reputation via ERC-8004.**
+**AI agents pay for APIs in USDC on Avalanche - including gas - and the privacy pivot now targets real eERC encrypted transfers for hidden amounts on-chain. No AVAX needed for the sponsored flow. Plus on-chain agent identity and reputation via ERC-8004.**
 
 Built on [SmoothSend](https://smoothsend.xyz) ERC-4337 infrastructure (VerifyingPaymaster + bundler on Avalanche C-Chain).
 
@@ -18,13 +18,24 @@ Built on [SmoothSend](https://smoothsend.xyz) ERC-4337 infrastructure (Verifying
 
 ### Pivot Summary
 
-This hackathon version focuses on a single, easy-to-demo story:
+This hackathon version now has a cleaner privacy story:
 
 - gasless agent payments on Avalanche
-- private spend presentation in the UI
+- real eERC encrypted transfers for hidden amounts
 - ERC-8004 identity and reputation as the trust layer
 
-The working execution layer stays the same. The product narrative shifts from a general agent wallet to a `Private Agent Wallet`.
+The old receipt-only privacy path is no longer the target demo. The public payment flow remains as a fallback, but the pitch should center on encrypted value movement.
+
+### SDK-first pivot
+
+The package is now meant to be consumed as a real SDK:
+
+- `AgentWallet` stays the main entrypoint
+- `payForService()` still handles gasless x402 flow
+- `privateTransfer()` routes to encrypted value movement when an eERC bridge is configured
+- `getEncryptedBalance()` exposes the encrypted balance snapshot for private flows
+
+If you want fully private transfers, provide an `eercBridge` adapter when creating the wallet. The SDK keeps the app-facing API small and lets the demo site or your own app wire the bridge implementation.
 
 ---
 
@@ -177,6 +188,11 @@ const wallet = await AgentWallet.create(config)
 | `dailyLimit` | ✅ | — | Max USDC/day (e.g. `'100'`) |
 | `perTxLimit` | ✅ | — | Max USDC/tx (e.g. `'10'`) |
 | `privateKey` | ❌ | Random EOA | Reuse wallet across restarts |
+| `privacyMode` | ❌ | `false` | Redact payment output by default |
+| `privacyRegistryAddress` | ❌ | `undefined` | Optional private envelope registry |
+| `eercBridge` | ❌ | `undefined` | Adapter that provides encrypted balance + transfer methods |
+| `eercTokenAddress` | ❌ | `undefined` | Default encrypted token address for private transfers |
+| `eercDecimals` | ❌ | `2` | Decimals used when converting private transfer amounts |
 | `identityRegistryAddress` | ❌ | Fuji deployment | Custom IdentityRegistry address |
 | `reputationRegistryAddress` | ❌ | Fuji deployment | Custom ReputationRegistry address |
 
@@ -189,6 +205,8 @@ const wallet = await AgentWallet.create(config)
 | `wallet.agentId` | `number \| null` | ERC-8004 agent ID (after `registerIdentity`) |
 | `getBalance()` | `string` | USDC balance |
 | `payForService(req)` | `PaymentResult` | Pay merchant in USDC (auto-approves paymaster) |
+| `privateTransfer(req)` | `PaymentResult` | Send an encrypted transfer through the eERC bridge |
+| `getEncryptedBalance(tokenAddress?)` | `EncryptedBalanceSnapshot` | Read the encrypted balance snapshot from the bridge |
 | `getBudgetStatus()` | `BudgetStatus` | Daily + per-tx budget info |
 | `exportPrivateKey()` | `string` | Export EOA private key |
 | `registerIdentity(name, desc)` | `number` | **v2.0** Mint ERC-8004 identity, returns agentId |
@@ -230,7 +248,52 @@ const results = await x402.batch([url1, url2, ...]);
 │ • register(name, desc)         • giveFeedback()     │
 │ • setAgentWallet(EIP-712)      • getSummary()       │
 │ • getAgentWallet()             • revokeFeedback()   │
+├─────────────────────────────────────────────────────┤
+│ eERC Bridge                                          │
+│ • getBalanceSnapshot()          • transfer()        │
+│ • register()                    • withdraw()        │
 └─────────────────────────────────────────────────────┘
+```
+
+### eERC bridge contract
+
+The SDK does not hardcode proof generation. Instead, it expects a small bridge object that wraps whatever eERC runtime you use.
+
+```typescript
+import { AgentWallet, type EercBridge } from '@vedmohan/agent-wallet';
+
+const eercBridge: EercBridge = {
+  async getBalanceSnapshot(tokenAddress) {
+    // Return decrypted + encrypted balance state for the current wallet.
+    return {
+      decryptedBalance: 1250000n,
+      parsedDecryptedBalance: '1.250000',
+      encryptedBalance: [0n, 0n],
+      auditorPublicKey: [0n, 0n],
+      decimals: 6n,
+    };
+  },
+  async transfer(to, amount, tokenAddress) {
+    // Call your eERC runtime here.
+    return { transactionHash: '0x...' };
+  },
+};
+
+const wallet = await AgentWallet.create({
+  smoothSendApiKey: process.env.SMOOTHSEND_API_KEY!,
+  dailyLimit: '100',
+  perTxLimit: '10',
+  network: 'avalanche-fuji',
+  eercBridge,
+  eercTokenAddress: '0xYourEncryptedToken',
+  eercDecimals: 6,
+});
+
+await wallet.privateTransfer({
+  to: '0xRecipient',
+  amount: '1.25',
+  private: true,
+});
 ```
 
 ---
@@ -240,15 +303,12 @@ const results = await x402.batch([url1, url2, ...]);
 ### Running locally
 
 ```bash
-# Terminal 1: build SDK in watch mode
-cd agent-wallet
-npm run dev
-
-# Terminal 2: demo site with local SDK
 cd agent-wallet/demo-site
-npm run dev:local           # uses local build (no npm publish needed)
-# or: npm run dev            # uses published npm package
+npm install
+npm run dev
 ```
+
+The demo site now consumes the published `@vedmohan/agent-wallet` package from npm by default.
 
 ### Deploying contracts
 
@@ -256,6 +316,57 @@ npm run dev:local           # uses local build (no npm publish needed)
 cd agent-wallet/contracts
 cp .env.example .env        # add DEPLOYER_PRIVATE_KEY
 npm run deploy:fuji
+```
+
+### Publishing the SDK
+
+```bash
+cd agent-wallet
+npm run build
+npm publish --access public
+```
+
+Then update any consumer to:
+
+- depend on `@vedmohan/agent-wallet@^2.4.0`
+- rebuild their lockfile if it pins an older version
+- pass an `eercBridge` adapter if they want the private transfer path
+
+### Consuming it in an app
+
+Minimum setup:
+
+```typescript
+import { AgentWallet, X402Client } from '@vedmohan/agent-wallet';
+
+const wallet = await AgentWallet.create({
+  smoothSendApiKey: process.env.SMOOTHSEND_API_KEY!,
+  dailyLimit: '100',
+  perTxLimit: '10',
+  network: 'avalanche-fuji',
+});
+
+const x402 = new X402Client({ wallet });
+```
+
+Private transfers:
+
+```typescript
+const wallet = await AgentWallet.create({
+  smoothSendApiKey: process.env.SMOOTHSEND_API_KEY!,
+  dailyLimit: '100',
+  perTxLimit: '10',
+  network: 'avalanche-fuji',
+  eercBridge,
+  eercTokenAddress: '0xYourEncryptedToken',
+  eercDecimals: 6,
+});
+
+await wallet.privateTransfer({
+  to: '0xRecipient',
+  amount: '1.25',
+  private: true,
+});
 ```
 
 ---

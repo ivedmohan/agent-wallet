@@ -879,7 +879,7 @@ export default function DemoPage() {
               <span className="text-[10px] text-white/20 font-mono ml-2">app.ts</span>
             </div>
             <pre className="p-5 text-sm font-mono text-white/70 overflow-x-auto leading-relaxed">
-{`import { AgentWallet, X402Client } from '@vedmohan/agent-wallet';
+{`import { AgentWallet, X402Client, type EercBridge } from '@vedmohan/agent-wallet';
 
 const wallet = await AgentWallet.create({
   smoothSendApiKey: process.env.SMOOTHSEND_API_KEY,
@@ -917,7 +917,7 @@ console.log(\`Settled fee: $\${weather.payment.actualGasCost}\`);
           <div className="flex items-center gap-4">
             <a href="https://www.npmjs.com/package/@vedmohan/agent-wallet" target="_blank" rel="noopener noreferrer"
               className="text-[10px] text-white/25 hover:text-white/50 transition-colors font-mono">
-                SDK v2.3.0
+                SDK v2.4.0
             </a>
             <a href="https://smoothsend.xyz" target="_blank" rel="noopener noreferrer"
               className="flex items-center gap-3 text-sm md:text-base font-semibold text-white/45 hover:text-white/80 transition-all group">
