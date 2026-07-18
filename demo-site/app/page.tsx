@@ -238,6 +238,12 @@ export default function DemoPage() {
     setError(null);
     setLogs([]);
 
+    if (privateMode) {
+      addLog('🔐 Opening the real private rail...', 'info');
+      window.location.href = '/private';
+      return;
+    }
+
     if (!x402Enabled) {
       // x402 OFF: direct merchant request, expect 402
       addLog(`🌐 GET /api/merchant?type=weather&city=${selectedCity}`, 'info');
@@ -438,7 +444,7 @@ export default function DemoPage() {
                   <div>
                     <div className="text-sm font-medium text-white/80">Private Spend Mode</div>
                     <div className="text-xs text-white/30 mt-0.5">
-                      {privateMode ? 'Masks spend details in the UI' : 'Shows full payment details'}
+                      {privateMode ? 'Routes to the real private rail' : 'Shows the public x402 flow'}
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
@@ -448,6 +454,12 @@ export default function DemoPage() {
                     <Toggle enabled={privateMode} onChange={setPrivateMode} label="Toggle private mode" />
                   </div>
                 </div>
+
+                {privateMode && (
+                  <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/5 p-4 text-sm text-cyan-50/80">
+                    UI masking is not enough for hidden amounts. This mode now opens the eERC private rail where the transfer amount is actually hidden onchain.
+                  </div>
+                )}
 
                 {/* x402 Toggle */}
                 <div className="flex items-center justify-between py-2">
