@@ -10,6 +10,8 @@ export const runtime = 'nodejs';
 export async function POST(request: NextRequest) {
   const steps: Array<{ step: number; label: string; status: string; detail: string; duration?: number }> = [];
   const startTime = Date.now();
+  const privacyRegistryAddress = process.env.PRIVATE_PAYMENT_ENVELOPE_REGISTRY || undefined;
+  const merchantAddress = '0x6e5ce646fD3D59e8981E24273087636b8F0F1322';
 
   function addStep(label: string, detail: string, status: 'running' | 'done' | 'error') {
     steps.push({
@@ -47,6 +49,10 @@ export async function POST(request: NextRequest) {
         agentId,
         txHash: `Registered agent #${agentId}`,
         wallet: { address: wallet.address, eoa: wallet.eoaAddress, balance },
+        contracts: {
+          privacyRegistryAddress,
+          merchantAddress,
+        },
       });
     }
 
@@ -89,6 +95,10 @@ export async function POST(request: NextRequest) {
         feedbackTx,
         payment,
         wallet: { address: wallet.address, eoa: wallet.eoaAddress, balance },
+        contracts: {
+          privacyRegistryAddress,
+          merchantAddress,
+        },
       });
     }
 
@@ -150,6 +160,10 @@ export async function POST(request: NextRequest) {
       result: { weather: result.data },
       payment: result.payment,
       wallet: { address: wallet.address, eoa: wallet.eoaAddress, balance, budget },
+      contracts: {
+        privacyRegistryAddress,
+        merchantAddress,
+      },
       network: process.env.WALLET_NETWORK || 'avalanche-fuji',
     });
   } catch (err: any) {

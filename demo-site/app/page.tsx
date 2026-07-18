@@ -20,6 +20,10 @@ interface DemoResult {
   duration: number;
   steps: FlowStep[];
   result?: { weather?: any };
+  contracts?: {
+    privacyRegistryAddress?: string;
+    merchantAddress?: string;
+  };
   payment?: {
     txHash: string;
     totalCost: string;
@@ -99,6 +103,16 @@ function TxLink({ txHash, network }: { txHash: string; network?: string }) {
   );
 }
 
+function AddressLink({ address, network }: { address: string; network?: string }) {
+  const base = network?.includes('mainnet') ? 'https://snowtrace.io/address/' : 'https://testnet.snowtrace.io/address/';
+  return (
+    <a href={`${base}${address}`} target="_blank" rel="noopener noreferrer"
+       className="text-cyan-400 hover:text-cyan-300 underline underline-offset-2 transition-colors font-mono text-xs break-all">
+      {address}
+    </a>
+  );
+}
+
 // ── Toggle Switch ───────────────────────────────────────────────
 
 function Toggle({ enabled, onChange, label }: { enabled: boolean; onChange: (v: boolean) => void; label: string }) {
@@ -164,7 +178,7 @@ export default function DemoPage() {
       estimatedGas: privateRedaction ? display?.gasCost ?? 'Confidential' : `$${payment.estimatedGasCost ?? payment.gasCost} USDC`,
       actualGas: privateRedaction ? display?.gasCost ?? 'Confidential' : `$${payment.actualGasCost ?? payment.gasCost} USDC`,
       total: privateRedaction ? display?.totalCost ?? 'Confidential' : `$${payment.totalCost} USDC`,
-      txHash: privateRedaction ? display?.txHash ?? 'Hidden until reveal' : payment.txHash,
+      txHash: payment.txHash,
       recipient: privateRedaction ? display?.recipient ?? 'Hidden' : '',
     };
   };
@@ -664,11 +678,7 @@ export default function DemoPage() {
                           <div className={`mt-1 h-2.5 w-2.5 rounded-full ${result.payment.txHash ? 'bg-emerald-400' : 'bg-white/20'} shadow-[0_0_0_4px_rgba(52,211,153,0.10)]`} />
                           <div>
                             <div className="text-white/80 text-sm font-medium">Sponsored execution</div>
-                            {activePaymentPrivate ? (
-                              <span className="text-white/40 font-mono text-xs">Hidden until reveal</span>
-                            ) : (
-                              <TxLink txHash={result.payment.txHash} network={result.network} />
-                            )}
+                            <TxLink txHash={result.payment.txHash} network={result.network} />
                           </div>
                         </div>
                       </div>
@@ -694,6 +704,40 @@ export default function DemoPage() {
                       </div>
                     </div>
                   )}
+
+                  <div className="mt-4 rounded-xl border border-white/5 bg-white/[0.02] p-4">
+                    <div className="text-white/30 text-xs mb-3 uppercase tracking-[0.2em]">Explorer Links</div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div className="rounded-lg border border-white/5 bg-black/20 p-3">
+                        <div className="text-[11px] text-white/30 mb-1">Payment Tx</div>
+                        <TxLink txHash={result.payment.txHash} network={result.network} />
+                      </div>
+                      <div className="rounded-lg border border-white/5 bg-black/20 p-3">
+                        <div className="text-[11px] text-white/30 mb-1">Privacy Registry Contract</div>
+                        {result.contracts?.privacyRegistryAddress ? (
+                          <AddressLink address={result.contracts.privacyRegistryAddress} network={result.network} />
+                        ) : (
+                          <div className="text-xs text-white/40">Not configured</div>
+                        )}
+                      </div>
+                      <div className="rounded-lg border border-white/5 bg-black/20 p-3">
+                        <div className="text-[11px] text-white/30 mb-1">Merchant Receiver</div>
+                        {result.contracts?.merchantAddress ? (
+                          <AddressLink address={result.contracts.merchantAddress} network={result.network} />
+                        ) : (
+                          <div className="text-xs text-white/40">Not configured</div>
+                        )}
+                      </div>
+                      <div className="rounded-lg border border-white/5 bg-black/20 p-3">
+                        <div className="text-[11px] text-white/30 mb-1">Smart Account</div>
+                        {result.wallet?.address ? (
+                          <AddressLink address={result.wallet.address} network={result.network} />
+                        ) : (
+                          <div className="text-xs text-white/40">Unavailable</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -918,7 +962,7 @@ console.log(\`Settled fee: $\${weather.payment.actualGasCost}\`);
           <div className="flex items-center gap-4">
             <a href="https://www.npmjs.com/package/@vedmohan/agent-wallet" target="_blank" rel="noopener noreferrer"
               className="text-[10px] text-white/25 hover:text-white/50 transition-colors font-mono">
-                SDK v2.4.0
+                SDK v2.4.1
             </a>
             <a href="https://smoothsend.xyz" target="_blank" rel="noopener noreferrer"
               className="flex items-center gap-3 text-sm md:text-base font-semibold text-white/45 hover:text-white/80 transition-all group">
