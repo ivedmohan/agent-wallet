@@ -12,7 +12,7 @@
   "dependencies": {
     "@avalabs/ac-eerc-sdk": "^1.0.0",
     "@tanstack/react-query": "^5.81.5",
-    "@vedmohan/agent-wallet": "^2.4.0",
+    "@vedmohan/agent-wallet": "2.4.1",
     "buffer": "^6.0.3",
     "crypto-browserify": "^3.12.1",
     "next": "^15.0.0",

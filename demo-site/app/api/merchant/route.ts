@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+export const runtime = 'nodejs';
+
 // Your EOA address — payments come back to you
 const MERCHANT_ADDRESS = '0x6e5ce646fD3D59e8981E24273087636b8F0F1322';
 const DEFAULT_PRICE = '0.01';

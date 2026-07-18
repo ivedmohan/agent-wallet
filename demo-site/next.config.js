@@ -21,12 +21,10 @@ const nextConfig = {
       crypto: require.resolve('crypto-browserify'),
       stream: require.resolve('stream-browserify'),
       buffer: require.resolve('buffer/'),
-      process: require.resolve('process/browser'),
     };
     config.plugins.push(
       new webpack.ProvidePlugin({
         Buffer: ['buffer', 'Buffer'],
-        process: 'process/browser',
       }),
       new webpack.NormalModuleReplacementPlugin(/^node:(.*)$/, (resource) => {
         resource.request = resource.request.replace(/^node:/, '');

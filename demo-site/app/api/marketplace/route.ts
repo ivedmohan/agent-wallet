@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createPublicClient, http } from 'viem';
 import { avalancheFuji } from 'viem/chains';
 
+export const runtime = 'nodejs';
+
 // ── Contract Addresses ─────────────────────────────────────────
 const IDENTITY_REGISTRY = '0x3F5Ee79771C2628D3941Bc015d306C194DA2E425' as `0x${string}`;
 const REPUTATION_REGISTRY = '0x351487d9E592B0D6682b0027a2eA099ab2652B10' as `0x${string}`;

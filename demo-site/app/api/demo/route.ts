@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+export const runtime = 'nodejs';
+
 /**
  * POST /api/demo
  * Runs the full x402 flow server-side and returns each step with timing.

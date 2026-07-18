@@ -174,10 +174,9 @@ export class AgentWallet {
     if (config.privateKey && AgentWallet.isValidPrivateKey(config.privateKey)) {
       wallet = new Wallet(config.privateKey);
     } else {
-      if (config.privateKey) {
-        console.warn('⚠️  Invalid PRIVATE_KEY format in .env (expected 0x + 64 hex chars). Generating random wallet — balance will be $0.');
-      }
-      wallet = Wallet.createRandom();
+      throw new Error(
+        '[AgentWallet] PRIVATE_KEY is required and must be a valid 0x-prefixed 64-byte hex string.'
+      );
     }
     console.log(`🔑 EOA Address:     ${wallet.address}`);
     const network = NETWORK_CONFIG[config.network];
